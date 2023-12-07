@@ -10,7 +10,7 @@ import shutil
 import random
 
 from torchvision.transforms import *
-
+import torch
 
 def prepare_train_directories(config, model_type):
     out_dir = config.train[model_type + '_dir']

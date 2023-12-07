@@ -13,6 +13,8 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 * Python == 3.7
 * PyTorch == 1.8.2
 
+[关于环境的坑](http://t.csdnimg.cn/dUCaF)
+
 ### Installation
 * Clone github repository.
 ```bash
