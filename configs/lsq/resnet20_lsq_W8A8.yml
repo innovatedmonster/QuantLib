@@ -4,7 +4,7 @@ solver:
 data:
  num_workers: 4
  pin_memory: False
- data_path: ../../data/cifar10/
+ data_path: ./data/cifar10/
 
 model:
   name: 'resnet20'
