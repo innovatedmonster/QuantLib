@@ -2,7 +2,8 @@ import argparse
 
 from utils.config import load
 from tools import cifar10_train, cifar10_train_daq
-
+import os
+os.environ['CUDA_VISIBLE_DEVICES'] = '3'
 
 def parse_args():
     parser = argparse.ArgumentParser(description='quantization network')
