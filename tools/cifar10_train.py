@@ -186,10 +186,10 @@ def main(args):
     config = utils.config.load(args.config_file)
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
-    # test guest1服务器的gpu是否有问题, 设置cuda不可用
-    torch.cuda.is_available = lambda : False
+    # test guest1服务器的gpu是否有问题, 设置cuda不可用，
+    # 服务器guest1，nvidia-smi中cuda是12.2而torch是11.7；而服务器xcn，nvidia-smi和torch都是11.7
+    # torch.cuda.is_available = lambda : False
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('\n----device is ', device, '\n\n')
 
     pprint.PrettyPrinter(indent=2).pprint(config)
     utils.prepare_train_directories(config, model_type)
