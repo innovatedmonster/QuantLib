@@ -25,7 +25,7 @@ class Round(Function):
         grad_input = torch.clone(grad_output)
         return grad_input
 
-
+# forward 方法的第一个参数是 ctx，它是一个用于保存信息的上下文对象。forward 方法的作用是定义前向传播的计算过程，同时将需要在后向传播时使用的信息保存到 ctx 中。
 class FunLSQ(Function):
     @staticmethod
     def forward(ctx, weight, alpha, g, Qn, Qp, per_channel=False):

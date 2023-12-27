@@ -11,7 +11,7 @@ model:
   params:
     num_classes: 10
   pretrain:
-    pretrained: True
+    pretrained: False
     dir: './models/cifar10_fp.pth'
   quant_func: "LSQConv2d"
   quant_params:
