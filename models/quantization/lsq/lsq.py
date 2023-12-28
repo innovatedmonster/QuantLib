@@ -121,7 +121,7 @@ class LSQActQuantizer(nn.Module):
 
         if self.observer or self.learning:
             x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
-        print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
+        # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
         return x
 
 
@@ -169,7 +169,7 @@ class LSQWeightQuantizer(nn.Module):
                     self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
         if self.observer or self.learning:
             x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
-        print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
+        # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
         return x
 
 
