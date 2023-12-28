@@ -21,7 +21,7 @@ path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
 path_log_opt_param = os.path.join(path_log, 'optimizer_param.log')
 
 # logger for test
-logger_opt_param = Logger(path_log_opt_param)
+# logger_opt_param = Logger(path_log_opt_param)
 
 device = None
 
