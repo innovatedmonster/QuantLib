@@ -47,6 +47,10 @@ class FunLSQ(Function):
             # print('w_q shape is ', w_q.shape)
             #test alpha(scale) and weight(x)
             w_q = w_q * alpha
+            # test scale shape from [] to [1]
+            # print('\n\n-----forward\n')
+            # print('LSQ scale shape is ', alpha.shape)
+            # test scale shape from [] to [1]
         return w_q
 
     @staticmethod
@@ -71,13 +75,13 @@ class FunLSQ(Function):
             grad_alpha = grad_alpha.contiguous().view(grad_alpha.size()[0], -1).sum(dim=1)
         else:
             grad_alpha = ((smaller * Qn + bigger * Qp +
-                           between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum()# fixed del .unsqueeze(dim=0)
+                           between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum().unsqueeze(dim=0)# grad must be shape[1] tensor
         grad_weight = between * grad_weight
         #test alpha(scale) and weight(x)
-        print('\n\n-----\nscale shape is ', alpha.shape)
-        print('x shape is ', weight.shape)
-        print('grad_weight shape is ', grad_weight.shape)
-        print('grad_alpha shape is ', grad_alpha.shape)
+        # print('\n\n-----backward\nscale shape is ', alpha.shape)
+        # print('x shape is ', weight.shape)
+        # print('grad_weight shape is ', grad_weight.shape)
+        # print('grad_alpha shape is ', grad_alpha.shape)
         #test alpha(scale) and weight(x)
         return grad_weight, grad_alpha, None, None, None, None
 
@@ -110,13 +114,14 @@ class LSQActQuantizer(nn.Module):
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
         if self.observer:
             if self.observer_init == 1:
-                self.scale.data = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
                 self.observer_init = 0
             else:
-                self.scale.data = 0.9*self.scale.data + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                self.scale.data[0] = 0.9*self.scale.data[0] + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
 
         if self.observer or self.learning:
             x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
+        print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
         return x
 
 
@@ -151,19 +156,20 @@ class LSQWeightQuantizer(nn.Module):
             if self.per_channel:
                 x_tmp = x.detach().contiguous().view(x.size()[0], -1)
                 if self.observer_init == 1:
-                    self.scale.data = torch.mean(torch.abs(x_tmp), dim=1) * 2 / math.sqrt(self.Qp)
+                    self.scale.data[0] = torch.mean(torch.abs(x_tmp), dim=1) * 2 / math.sqrt(self.Qp)
                     self.observer_init = 0
                 else:
-                    self.scale.data = 0.9 * self.scale.data + 0.1 * torch.mean(torch.abs(x_tmp), dim=1) * 2 / (
+                    self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x_tmp), dim=1) * 2 / (
                         math.sqrt(self.Qp))
             else:
                 if self.observer_init == 1:
-                    self.scale.data = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                    self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
                     self.observer_init = 0
                 else:
-                    self.scale.data = 0.9 * self.scale.data + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                    self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
         if self.observer or self.learning:
             x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
+        print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
         return x
 
 
