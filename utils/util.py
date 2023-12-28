@@ -64,8 +64,10 @@ class Logger(object):
         self.console = sys.stdout
         self.file = None
         if fpath is not None:
-            mkdir_if_missing(osp.dirname(fpath))
-            self.file = open(fpath, 'w')
+            # mkdir_if_missing(osp.dirname(fpath))
+            if os.path.exists(fpath):
+                os.remove(fpath)
+            self.file = open(fpath, 'a+')
 
     def __del__(self):
         self.close()
@@ -77,12 +79,12 @@ class Logger(object):
         self.close()
 
     def write(self, msg):
-        self.console.write(msg)
+        # self.console.write(msg)
         if self.file is not None:
             self.file.write(msg)
 
     def flush(self):
-        self.console.flush()
+        # self.console.flush()
         if self.file is not None:
             self.file.flush()
             os.fsync(self.file.fileno())
@@ -103,3 +105,6 @@ class RandomResized(object):
         scale = Resize(scale_size)
         return scale(img)
 
+# added, test enter
+def printLocation(location):
+    print('entered ' + location)

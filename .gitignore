@@ -138,3 +138,6 @@ output
 
 # dataset
 /data
+
+# log
+/log4test

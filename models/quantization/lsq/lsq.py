@@ -9,7 +9,6 @@ import torch.nn.functional as F
 from torch.autograd import Function
 import math
 
-
 __all__ = ['LSQConv2d', "Round", "FunLSQ"]
 
 
@@ -34,7 +33,7 @@ class FunLSQ(Function):
         if per_channel:
             sizes = weight.size()
             weight = weight.contiguous().view(weight.size()[0], -1)
-            weight = torch.transpose(weight, 0, 1)
+            weight = torch.transpose(weight, 0, 1)             
             alpha = torch.broadcast_to(alpha, weight.size())
             w_q = Round.apply(torch.div(weight, alpha)).clamp(Qn, Qp)
             w_q = w_q * alpha
@@ -42,6 +41,11 @@ class FunLSQ(Function):
             w_q = w_q.contiguous().view(sizes)
         else:
             w_q = Round.apply(torch.div(weight, alpha)).clamp(Qn, Qp)
+            #test alpha(scale) and weight(x)
+            # print('\n\n-----\nscale shape is ', alpha.shape)
+            # print('x shape is ', weight.shape)
+            # print('w_q shape is ', w_q.shape)
+            #test alpha(scale) and weight(x)
             w_q = w_q * alpha
         return w_q
 
@@ -67,8 +71,14 @@ class FunLSQ(Function):
             grad_alpha = grad_alpha.contiguous().view(grad_alpha.size()[0], -1).sum(dim=1)
         else:
             grad_alpha = ((smaller * Qn + bigger * Qp +
-                           between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum().unsqueeze(dim=0)
+                           between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum()# fixed del .unsqueeze(dim=0)
         grad_weight = between * grad_weight
+        #test alpha(scale) and weight(x)
+        print('\n\n-----\nscale shape is ', alpha.shape)
+        print('x shape is ', weight.shape)
+        print('grad_weight shape is ', grad_weight.shape)
+        print('grad_alpha shape is ', grad_alpha.shape)
+        #test alpha(scale) and weight(x)
         return grad_weight, grad_alpha, None, None, None, None
 
 

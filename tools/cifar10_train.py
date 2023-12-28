@@ -14,7 +14,14 @@ from utils.metrics import accuracy
 from utils.metrics import AverageMeter
 import utils.config
 import utils.checkpoint
+from utils.util import Logger
 
+# path
+path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
+path_log_opt_param = os.path.join(path_log, 'optimizer_param.log')
+
+# logger for test
+logger_opt_param = Logger(path_log_opt_param)
 
 device = None
 
@@ -141,6 +148,13 @@ def run(config):
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
 
+    # test model.param
+    for name, param in model.named_parameters():
+        logger_opt_param.write(name + '\n')
+    logger_opt_param.flush()
+    # logger_opt_param.close()
+    # test model.param
+    
     optimizer = get_optimizer(config, model.parameters())
 
     # Loading the full-precision model

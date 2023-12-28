@@ -5,7 +5,6 @@ from __future__ import absolute_import
 
 from models.resnet_quant import resnet20
 
-
 def get_model(config):
     model = globals().get(config.model.name)
     if config.model.params is None:
