@@ -149,10 +149,9 @@ def run(config):
     criterion = get_loss(config)
 
     # test model.param
-    for name, param in model.named_parameters():
-        logger_opt_param.write(name + '\n')
-    logger_opt_param.flush()
-    # logger_opt_param.close()
+    # for name, param in model.named_parameters():
+    #     logger_opt_param.write(name + '\n')
+    # logger_opt_param.flush()
     # test model.param
     
     optimizer = get_optimizer(config, model.parameters())
