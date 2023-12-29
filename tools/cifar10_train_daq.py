@@ -16,7 +16,7 @@ from .cifar10_train import evaluate_single_epoch, count_parameters
 from utils.util import Logger
 
 # path
-path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
+path_log = './log4test/'
 path_log_opt_param = os.path.join(path_log, 'optimizer_param_daq.log')
 path_log_opt_qparam = os.path.join(path_log, 'optimizer_qparam_daq.log')
 
