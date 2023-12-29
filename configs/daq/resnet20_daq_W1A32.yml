@@ -4,15 +4,15 @@ solver:
 data:
  num_workers: 4
  pin_memory: False
- data_path: ../../data/cifar10/
+ data_path: ./data/cifar10/
 
 model:
   name: 'resnet20'
   params:
     num_classes: 10
   pretrain:
-    pretrained: True
-    dir: '../../models/cifar10_fp.pth'
+    pretrained: False
+    dir: './models/cifar10_fp.pth'
   quant_func: "DAQConv2d"
   quant_params:
     bits: 1

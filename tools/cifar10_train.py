@@ -65,7 +65,7 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
                     writer.add_scalar('train/{}'.format(key), value, log_step)
 
 
-def evaluate_single_epoch(model, dataloader, criterion, epoch, writer, postfix_dict, eval_type):
+def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, postfix_dict, eval_type):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
@@ -79,6 +79,8 @@ def evaluate_single_epoch(model, dataloader, criterion, epoch, writer, postfix_d
             imgs = imgs.to(device)
             labels = labels.to(device)
 
+            print('model and data \'s device are ', next(model.parameters()).device, 
+                  ' ', imgs.device)
             pred_dict = model(imgs)
             train_loss = criterion['val'](pred_dict['out'], labels)
             prec1, prec5 = accuracy(pred_dict['out'].data, labels.data, topk=(1, 5))
@@ -126,7 +128,7 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
         train_single_epoch(model, dataloaders['train'], criterion, optimizer, epoch, writer, postfix_dict)
 
         # test phase
-        top1, top5 = evaluate_single_epoch(model, dataloaders['test'], criterion, epoch, writer,
+        top1, top5 = evaluate_single_epoch(device, model, dataloaders['test'], criterion, epoch, writer,
                                            postfix_dict, eval_type='test')
         scheduler.step()
 

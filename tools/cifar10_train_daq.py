@@ -13,6 +13,16 @@ from schedulers import get_scheduler
 import utils.config
 import utils.checkpoint
 from .cifar10_train import evaluate_single_epoch, count_parameters
+from utils.util import Logger
+
+# path
+path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
+path_log_opt_param = os.path.join(path_log, 'optimizer_param_daq.log')
+path_log_opt_qparam = os.path.join(path_log, 'optimizer_qparam_daq.log')
+
+# logger for test
+logger_opt_param = Logger(path_log_opt_param)
+logger_opt_qparam = Logger(path_log_opt_qparam)
 
 device = None
 
@@ -77,7 +87,7 @@ def train(config, model, dataloaders, criterion, optimizer, q_optimizer, schedul
                            epoch, writer, postfix_dict)
 
         # test phase
-        top1, top5 = evaluate_single_epoch(model, dataloaders['test'], criterion, epoch, writer,
+        top1, top5 = evaluate_single_epoch(device, model, dataloaders['test'], criterion, epoch, writer,
                                            postfix_dict, eval_type='test')
         scheduler.step()
         q_scheduler.step()
@@ -132,6 +142,12 @@ def run(config):
     q_param = qparam_extract(model, )
     param = param_extract(model)
 
+    # test q_param and models.param
+    # for name, param in model.named_parameters():
+    #     logger_opt_param.write(name + '\n')
+    # logger_opt_param.flush()
+    # test q_param and models.param
+    
     optimizer = get_optimizer(config, param)
     q_optimizer = get_q_optimizer(config, q_param)
 
@@ -177,6 +193,7 @@ def main(args):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
+    print('init device is ', device)
 
     pprint.PrettyPrinter(indent=2).pprint(config)
     utils.prepare_train_directories(config, model_type)
