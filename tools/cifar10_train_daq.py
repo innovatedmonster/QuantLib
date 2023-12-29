@@ -20,9 +20,15 @@ path_log = './log4test/'
 path_log_opt_param = os.path.join(path_log, 'optimizer_param_daq.log')
 path_log_opt_qparam = os.path.join(path_log, 'optimizer_qparam_daq.log')
 
+if os.path.exists(path_log_opt_param):
+    os.remove(path_log_opt_param)
+if os.path.exists(path_log_opt_qparam):
+    os.remove(path_log_opt_qparam)
+
 # logger for test
 logger_opt_param = Logger(path_log_opt_param)
 logger_opt_qparam = Logger(path_log_opt_qparam)
+
 
 device = None
 
