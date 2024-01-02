@@ -19,19 +19,22 @@ from utils.util import Logger
 path_log = './log4test/'
 path_log_opt_param = os.path.join(path_log, 'optimizer_param_daq.log')
 path_log_opt_qparam = os.path.join(path_log, 'optimizer_qparam_daq.log')
+path_log_model = os.path.join(path_log, 'model.log')
 
 if os.path.exists(path_log_opt_param):
     os.remove(path_log_opt_param)
 if os.path.exists(path_log_opt_qparam):
     os.remove(path_log_opt_qparam)
+if os.path.exists(path_log_model):
+    os.remove(path_log_model)
 
 # logger for test
 logger_opt_param = Logger(path_log_opt_param)
 logger_opt_qparam = Logger(path_log_opt_qparam)
-
+logger_model = Logger(path_log_model)
 
 device = None
-
+test_idx = 0
 
 def train_single_epoch(model, dataloader, criterion, optimizer, q_optimizer, epoch, writer, postfix_dict):
     model.train()
@@ -110,26 +113,42 @@ def train(config, model, dataloaders, criterion, optimizer, q_optimizer, schedul
 
     return {'best_accuracy': best_accuracy}
 
-
-def qparam_extract(model):
+# 获取量化算子_modules[m]即DAQConv2d 的参数
+# 其中共4个参数: 权重weight, 权重上界uW, 权重下界lW, 反缩放系数beta(公式3中的s)
+def qparam_extract(model, logger):
+    global test_idx
     var = list()
     for m in model._modules:
         if len(model._modules[m]._modules) > 0:
-            var = var + qparam_extract(model._modules[m])
+            var = var + qparam_extract(model._modules[m], logger)
         else:
             if hasattr(model._modules[m], 'init'):
                 print("qparam: ", list(model._modules[m].parameters())[1:])
                 var = var + list(model._modules[m].parameters())[1:]
+                logger.write('---q_ext ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
+                logger.write('len(param) is ' + \
+                    str(len(list(model._modules[m].parameters())[1:])) + '\n')
+                logger.write('param is: \n')
+                for elemet in list(model._modules[m].parameters())[1:]:
+                    logger.write(str(elemet.shape) + '\n')
+                # logger.write('[0] shape is ' + \
+                #     str(list(model._modules[m].parameters())[0].shape)+'\n\n')
+                test_idx = test_idx + 1
     return var
 
-
-def param_extract(model):
+# 获取所有算子的参数
+# 其中排除量化算子DAQConv2d的三个参数uW, lW, beta
+def param_extract(model, logger):
+    global test_idx
     var = list()
     for m in model._modules:
         if len(model._modules[m]._modules) > 0:
-            var = var + param_extract(model._modules[m])
+            var = var + param_extract(model._modules[m], logger)
         else:
             from models.quantization.daq.daq import DAQConv2d
+            # logger.write('---fp_one ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
+            # for elemet in list(model._modules[m].parameters()):
+            #     logger.write(str(elemet.shape) + '\n')
             if isinstance(model._modules[m], DAQConv2d):
                 print("type", type(model._modules[m]))
             if hasattr(model._modules[m], 'init'):
@@ -137,21 +156,44 @@ def param_extract(model):
                 var = var + list(model._modules[m].parameters())[0:1]
             else:
                 var = var + list(model._modules[m].parameters())
+            test_idx = test_idx + 1
     return var
 
 
 def run(config):
+    global test_idx
+    
     model = get_model(config).to(device)
+    #test model
+    logger_model.write(str(model))
+    logger_model.flush()
+    #test model
+    
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
 
-    q_param = qparam_extract(model, )
-    param = param_extract(model)
+    # 测试发现两种参数都是列表
+    test_idx = 0
+    q_param = qparam_extract(model, logger_opt_qparam)
+    test_idx = 0
+    param = param_extract(model, logger_opt_qparam)
 
     # test q_param and models.param
-    # for name, param in model.named_parameters():
-    #     logger_opt_param.write(name + '\n')
-    # logger_opt_param.flush()
+    for name, _param in model.named_parameters():
+        logger_opt_param.write(name + '\n')
+    logger_opt_param.flush()
+    
+    param_str = '\n\n-----type of param and q_param is ' + str(type(param)) \
+        + ' ' + str(type(q_param)) \
+        + '\nlen(param) is ' + str(len(param))\
+        + '\nlen(q_param) is ' + str(len(q_param)) + '\n\n'
+    logger_opt_qparam.write(param_str)
+
+    # logger_opt_qparam.write('\n\n---params are:\n')
+    # logger_opt_qparam.write(str(param))
+    # logger_opt_qparam.write('\n\n---q_params are:\n')
+    # logger_opt_qparam.write(str(q_param))
+    logger_opt_qparam.flush()
     # test q_param and models.param
     
     optimizer = get_optimizer(config, param)
@@ -199,7 +241,6 @@ def main(args):
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
-    print('init device is ', device)
 
     pprint.PrettyPrinter(indent=2).pprint(config)
     utils.prepare_train_directories(config, model_type)

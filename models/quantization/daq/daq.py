@@ -10,7 +10,7 @@ import numpy as np
 
 __all__ = ['DAQConv2d']
 
-
+# 可微分版的绝对值函数
 class absol(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input):
@@ -35,6 +35,8 @@ class DAQConv2d(nn.Conv2d):
         self.quant_wgt = quant_wgt
         self.bit_range = 2**self.bits - 1
 
+        # 为什么q_value是数组[0, 1]变形成shape为(2, 1, 1, 1, 1)后的数？？？不应该是原数量化后的数吗
+        # 很可能是这里写死了， 就是只支持1bit的weight和act的量化
         self.q_value = torch.from_numpy(np.linspace(0, 1, 2))
         self.q_value = self.q_value.reshape(len(self.q_value), 1, 1, 1, 1).float().cuda()
         self.wgt_sigma = wgt_sigma
@@ -48,7 +50,8 @@ class DAQConv2d(nn.Conv2d):
             # Weight
             self.uW = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.lW = nn.Parameter(data=torch.tensor((-1) * (2**32)).float().cuda())
-            self.beta = nn.Parameter(data=torch.tensor(0.2).float().cuda())
+            #beta的作用是反缩放weight， 缩放反缩放的原因可能是为了训练好收敛
+            self.beta = nn.Parameter(data=torch.tensor(0.2).float().cuda()) 
 
         # Activation input
         if self.quant_act:
@@ -72,7 +75,7 @@ class DAQConv2d(nn.Conv2d):
         return output / self.bit_range
 
     def wgt_soft_quant(self, x, u, l):
-        delta = (u - l) / self.bit_range
+        delta = (u - l) / self.bit_range # delta就是scale
         interval = (x - l) / delta
         interval = torch.clamp(interval, min=0, max=self.bit_range)
         output = 2 * self.soft_argmax(interval, self.wgt_temp, self.wgt_sigma) - self.bit_range

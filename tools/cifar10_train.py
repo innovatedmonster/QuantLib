@@ -79,8 +79,6 @@ def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, p
             imgs = imgs.to(device)
             labels = labels.to(device)
 
-            print('model and data \'s device are ', next(model.parameters()).device, 
-                  ' ', imgs.device)
             pred_dict = model(imgs)
             train_loss = criterion['val'](pred_dict['out'], labels)
             prec1, prec5 = accuracy(pred_dict['out'].data, labels.data, topk=(1, 5))
