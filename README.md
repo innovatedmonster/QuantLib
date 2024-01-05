@@ -7,11 +7,12 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 - [x] [LSQ (ICLR'2019)](configs/lsq) [LEARNED STEP SIZE QUANTIZATION](https://arxiv.org/abs/1902.08153)
 - [x] [LSQ+ (CVPR'2020)](configs/lsq) [LSQ+: Improving low-bit quantization through learnable offsets and better initialization](https://arxiv.org/pdf/2004.09576.pdf)
 - [x] [DAQ (ICCV'2021)](configs/daq) [Distance-aware Quantization](https://arxiv.org/abs/1902.08153)
+- [] [QIL (CVPR'2019)](configs/qil) [Quantization-interval Learning](https://arxiv.org/abs/1808.05779)
 
 ## Getting Started
 ### Dependencies
 * Python == 3.7
-* PyTorch == 1.8.2
+* PyTorch == 1.8.2(我用的PyTorch==1.12.0+cu116)
 
 [关于环境的坑](http://t.csdnimg.cn/O3k6Y)  
 **DAQ部分代码写死了，只支持1bit**  

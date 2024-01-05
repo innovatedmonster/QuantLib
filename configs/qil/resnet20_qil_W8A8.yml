@@ -1,5 +1,5 @@
 solver:
-  cifar10_train
+  cifar10_train_qil
 
 data:
  num_workers: 4
@@ -13,7 +13,7 @@ model:
   pretrain:
     pretrained: False
     dir: './models/cifar10_fp.pth'
-  quant_func: "LSQConv2d"
+  quant_func: "QILConv2d"
   quant_params:
     bits: 8
     quant_wgt: True
@@ -30,7 +30,7 @@ train:
   dir: "./output"
   batch_size: 256
   num_epochs: 400
-  model_dir: '_lsq_W8A8_220203'
+  model_dir: '_qil_W8A8_220203'
   save_model_frequency: 1
 
 eval:
