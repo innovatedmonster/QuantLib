@@ -178,7 +178,7 @@ class DAQConv2d(nn.Conv2d):
             q_output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
             ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
-            self.beta.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output))
+            self.beta.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
             self.init = torch.tensor(0)
 
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)

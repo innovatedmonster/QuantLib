@@ -20,24 +20,16 @@ class QILConv2d(nn.Conv2d):
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act
+        self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
         
         self.step = 0
         self.observer_step = observer_step
         
-        
         self.register_buffer('init', torch.tensor(1).float().cuda())
-        # test 新增缩放因子scale 和 创建c_W, d_W, c_X, d_X
-        if self.quant_wgt:
-            self.c_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.d_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
-        if self.quant_act:
-            self.c_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.d_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-        
-        self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
-        self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
-                                                   quant=quant, observer=observer, learning=learning)
+        # if self.quant_wgt:
+        #     self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
 
     def set_quant_config(self):
         if self.step <= self.observer_step:
@@ -60,36 +52,21 @@ class QILConv2d(nn.Conv2d):
     def forward(self, x):
         self.step += 1
         self.set_quant_config()
-        
-        if self.init:
-            if self.quant_wgt:
-                self.c_W.data = torch.tensor(0.1).cuda()
-                self.d_W.data = torch.tensor(0.05).cuda()
-            if self.quant_act:
-                self.c_X.data = torch.tensor(0.1).cuda()
-                self.d_X.data = torch.tensor(0.05).cuda()
-        
-        curr_running_cW = self.c_W
-        curr_running_dW = self.d_W
-
-        curr_running_cX = self.c_X
-        curr_running_dX = self.d_X
-        
         if self.quant and self.quant_act:
-            act = self.act_quantizer(x, curr_running_cW, curr_running_dW)
+            act = self.act_quantizer(x)
         else:
             act = x
         if self.quant and self.quant_wgt:
-            wgt = self.weight_quantizer(self.weight, curr_running_cX, curr_running_dX)
+            wgt = self.weight_quantizer(self.weight)
         else:
             wgt = self.weight
 
         if self.init == 1:
             # scale factor initialization
-            q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-            ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            # q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
+            # ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
-            self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
+            # self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
             self.init = torch.tensor(0)
             # print('enter the scale initialization! \nscale is ', self.scale, '\n')
         
@@ -116,7 +93,7 @@ class QILActQuantizer(nn.Module):
         self.observer_init = torch.tensor(1, dtype=torch.int8)
         self.transformer = Transformer('activation', gamma_fix)
 
-    def forward(self, x, c_delta, d_delta):
+    def forward(self, x):
         if not self.quant:
             return x
         if self.observer:
@@ -128,7 +105,7 @@ class QILActQuantizer(nn.Module):
                 pass
                 
         if self.observer or self.learning:
-            transform_x = self.transformer(x, c_delta, d_delta)
+            transform_x = self.transformer(x)
             # x = Discretizer.apply(transform_x, self.quant_level)
             x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
@@ -155,7 +132,7 @@ class QILWeightQuantizer(nn.Module):
         self.observer_init = torch.tensor(1, dtype=torch.int8)
         self.transformer = Transformer('weight', gamma_fix)
 
-    def forward(self, x, c_delta, d_delta):
+    def forward(self, x):
         if not self.quant:
             return x
         assert self.per_channel != True, "QIL don't support per_channel quant"
@@ -168,7 +145,7 @@ class QILWeightQuantizer(nn.Module):
                 # self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
                 pass
         if self.observer or self.learning:
-            transform_x = self.transformer(x, c_delta, d_delta)
+            transform_x = self.transformer(x)
             # x = Discretizer.apply(transform_x, self.quant_level)
             x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
@@ -181,6 +158,8 @@ class Transformer(nn.Module):
         self.name = name
 
         """ Transformer Parameter """
+        self.c_delta = nn.Parameter(torch.tensor([0.1]).cuda())
+        self.d_delta = nn.Parameter(torch.tensor([0.05]).cuda())
         if not gamma_fix:
             # bug 可能存在
             # self.gamma = torch.tensor([1.0]).to(device)
@@ -189,26 +168,25 @@ class Transformer(nn.Module):
         else:
             self.gamma = None
 
-    def forward(self, x, c_delta, d_delta):
+    def forward(self, x):
         # 疑问1，不确定是否要使用可微版本的abs
         # 疑问2，是否要保证【c和d都是正数且c>d】？
-        c_delta.data = absol.apply(c_delta)
-        d_delta.data = absol.apply(d_delta)
+        self.c_delta.data = absol.apply(self.c_delta)
+        self.d_delta.data = absol.apply(self.d_delta)
 
         # 防止被零除. (出现nan, inf)
-        if d_delta.data < 0.001:
-            d_delta.data += 1e-4
+        if self.d_delta.data < 0.001:
+            self.d_delta.data += 1e-4
 
-        if c_delta.data < 0.001:
-            c_delta.data += 1e-4
+        if self.c_delta.data < 0.001:
+            self.c_delta.data += 1e-4
 
         # 确保d_delta <= c_delta
-        # bug可能存在，处理方式很重要，可能因此找不到最优
-        if d_delta.data > c_delta.data:
-            d_delta.data = c_delta.data
+        if self.d_delta.data > self.c_delta.data:
+            self.d_delta.data = self.c_delta.data
 
         # test NaN, 令Transformer失效，发现不报NaN的warning了，说明FunTSF我写的有问题
-        x = FunTSF.apply(x, c_delta, d_delta, self.gamma, self.name)
+        x = FunTSF.apply(x, self.c_delta, self.d_delta, self.gamma, self.name)
         # print('c_delta, d_delta is respectively: \n', self.c_delta, self.d_delta, '\n')
         return x
 
