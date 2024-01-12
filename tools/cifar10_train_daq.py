@@ -123,7 +123,7 @@ def qparam_extract(model, logger):
             var = var + qparam_extract(model._modules[m], logger)
         else:
             if hasattr(model._modules[m], 'init'):
-                print("qparam: ", list(model._modules[m].parameters())[1:])
+                # print("qparam: ", list(model._modules[m].parameters())[1:])
                 var = var + list(model._modules[m].parameters())[1:]
                 logger.write('---q_ext ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
                 logger.write('len(param) is ' + \
@@ -152,7 +152,7 @@ def param_extract(model, logger):
             if isinstance(model._modules[m], DAQConv2d):
                 print("type", type(model._modules[m]))
             if hasattr(model._modules[m], 'init'):
-                print("param: ", list(model._modules[m].parameters())[0:1])
+                # print("param: ", list(model._modules[m].parameters())[0:1])
                 var = var + list(model._modules[m].parameters())[0:1]
             else:
                 var = var + list(model._modules[m].parameters())

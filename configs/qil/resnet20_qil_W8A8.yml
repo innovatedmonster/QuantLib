@@ -29,7 +29,7 @@ model:
 train:
   dir: "./output"
   batch_size: 256
-  num_epochs: 150
+  num_epochs: 400
   model_dir: '_qil_W8A8'
   save_model_frequency: 1
 

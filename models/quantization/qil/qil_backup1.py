@@ -88,21 +88,13 @@ class QILConv2d(nn.Conv2d):
             # scale factor initialization
             q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
             ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            # bug fixed, 发现bug NaN的原因是除数是0！！！
-            if torch.mean(torch.abs(q_output)).data < 0.001:
-                self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
-            else:
-                self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-            # test scale的除数 
-            # print('cal scale的除数是 ', torch.mean(torch.abs(q_output)))
-            # print('cal scale的被除数是 ', torch.mean(torch.abs(ori_output)))
+
+            self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
             self.init = torch.tensor(0)
+            # print('enter the scale initialization! \nscale is ', self.scale, '\n')
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        output = torch.abs(self.scale) * output
-        # test scale.grad
-        # print('scale is ', self.scale.data)
-        # print('scale grad is ', self.scale.grad) # scale的梯度为0，为什么
+        # output = torch.abs(self.scale) * output
         return output
 
 class QILActQuantizer(nn.Module):
