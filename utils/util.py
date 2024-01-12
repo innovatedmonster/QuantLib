@@ -64,7 +64,7 @@ class Logger(object):
         self.console = sys.stdout
         self.file = None
         if fpath is not None:
-            # mkdir_if_missing(osp.dirname(fpath))
+            mkdir_if_missing(osp.dirname(fpath))
             if os.path.exists(fpath):
                 os.remove(fpath)
             self.file = open(fpath, 'a+')
