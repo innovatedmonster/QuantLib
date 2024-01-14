@@ -56,4 +56,9 @@ loss:
   params:
     reduction: 'mean'
 
+logger:
+  params:
+    path_log: '/home/workspace/lfh/haq_lsq/QuantLib/log4test/'
+    path_log_beta: 'beta.log'
+
 gpu: 0

@@ -7,6 +7,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
+import utils.config
+from utils.util import Logger
+import os
 
 __all__ = ['DAQConv2d']
 
@@ -184,4 +187,11 @@ class DAQConv2d(nn.Conv2d):
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.beta) * output
 
+        config = utils.config.load("configs/daq/resnet20_daq_W1A32.yml")
+        path_log_beta = os.path.join(config.logger.params.path_log, config.logger.params.path_log_beta)
+        logger_beta = Logger(path_log_beta)
+        logger_beta.write('daq\'s beta is ' + str(self.beta) + '\n')
+        logger_beta.write('its grad is ' + str(self.beta.grad) + '\n\n')
+        logger_beta.flush()
+        
         return output
