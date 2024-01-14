@@ -7,7 +7,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import logging
 
 __all__ = ['DAQConv2d']
 
@@ -184,10 +183,6 @@ class DAQConv2d(nn.Conv2d):
 
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.beta) * output
-
-        logging.basicConfig(filename='/home/workspace/lfh/haq_lsq/Quantlib/log4test/beta.log', level=logging.INFO)
-        logger = logging.getLogger(__name__)
-        logger.info('daq\'s beta is ' + str(self.beta) + '\n')
-        logger.info('its grad is ' + str(self.beta.grad) + '\n\n')
+        print('daq beta is ', self.beta.data)
         
         return output

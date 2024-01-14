@@ -164,10 +164,6 @@ def run(config):
     global test_idx
     
     model = get_model(config).to(device)
-    #test model
-    logger_model.write(str(model))
-    logger_model.flush()
-    #test model
     
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
