@@ -54,4 +54,9 @@ loss:
   params:
     reduction: 'mean'
 
+logger:
+  path:
+    path_log: '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
+    path_log_opt_param: 'optimizer_param.log'
+
 gpu: 0

@@ -16,13 +16,6 @@ import utils.config
 import utils.checkpoint
 from utils.util import Logger
 
-# path
-path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
-path_log_opt_param = os.path.join(path_log, 'optimizer_param.log')
-
-# logger for test
-logger_opt_param = Logger(path_log_opt_param)
-
 device = None
 
 
@@ -149,6 +142,9 @@ def run(config):
     criterion = get_loss(config)
 
     # test model.param
+    path_log_opt_param = os.path.join(config.path.path_log, path_log_opt_param)
+    logger_opt_param = Logger(path_log_opt_param)
+    
     for name, param in model.named_parameters():
         logger_opt_param.write(name + '\n')
     logger_opt_param.flush()
