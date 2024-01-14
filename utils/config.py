@@ -65,7 +65,7 @@ def _get_default_config():
     
     # logger
     c.logger = edict()
-    c.logger.path = edict()
+    c.logger.params = edict()
 
     return c
 
