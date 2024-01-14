@@ -62,6 +62,10 @@ def _get_default_config():
     c.loss = edict()
     c.loss.name = None
     c.loss.params = edict()
+    
+    # logger
+    c.logger = edict()
+    c.logger.path = edict()
 
     return c
 
