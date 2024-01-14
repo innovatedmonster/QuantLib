@@ -103,7 +103,7 @@ class QILConv2d(nn.Conv2d):
         print('scale grad is ', self.scale.grad) # scale的梯度为0，为什么
         
         print('output is ', output)
-        print('output grad is 'output.grad)
+        print('output grad is ', output.grad)
         return output
 
 class QILActQuantizer(nn.Module):
