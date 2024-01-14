@@ -93,16 +93,13 @@ class QILConv2d(nn.Conv2d):
                 self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
             else:
                 self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-            # test scale的除数 
-            # print('cal scale的除数是 ', torch.mean(torch.abs(q_output)))
-            # print('cal scale的被除数是 ', torch.mean(torch.abs(ori_output)))
             self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.scale) * output
         # test scale.grad
         # print('scale is ', self.scale.data)
-        # print('scale grad is ', self.scale.grad) # scale的梯度为0，为什么
+        print('scale grad is ', self.scale.grad) # scale的梯度为0，为什么
         return output
 
 class QILActQuantizer(nn.Module):
@@ -137,8 +134,8 @@ class QILActQuantizer(nn.Module):
                 
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
-            # x = Discretizer.apply(transform_x, self.quant_level)
-            x = Round.apply(transform_x * self.quant_level) / self.quant_level
+            x = Discretizer.apply(transform_x, self.quant_level)
+            # x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
         return x
 
@@ -177,8 +174,8 @@ class QILWeightQuantizer(nn.Module):
                 pass
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
-            # x = Discretizer.apply(transform_x, self.quant_level)
-            x = Round.apply(transform_x * self.quant_level) / self.quant_level
+            x = Discretizer.apply(transform_x, self.quant_level)
+            # x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
         return x
 
