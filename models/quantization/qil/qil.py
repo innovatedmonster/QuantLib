@@ -98,7 +98,7 @@ class QILConv2d(nn.Conv2d):
         #     self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        # output.retain_grad()
+        output.retain_grad()
         output = self.scale * output
         # bug here, scale grad is 0
         # print('---\nscale is ', self.scale.data)# float32
