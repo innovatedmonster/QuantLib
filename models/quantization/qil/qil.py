@@ -110,7 +110,7 @@ class QILConv2d(nn.Conv2d):
         #     self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        output = self.scale * output
+        output = torch.abs(self.scale) * output
         # bug here, scale grad is 0
         # print('---\nscale is ', self.scale.data)# float32
         # print("scale grad is", self.scale.grad, " \n") # scale的梯度为0，为什么
