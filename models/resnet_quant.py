@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from collections import OrderedDict
 
 from models.util import get_func
+import torch
 
 
 class LambdaLayer(nn.Module):
@@ -124,6 +125,7 @@ class BasicBlock(nn.Module):
         conv2_out = self.bn2(self.conv2(conv1_out))
         out = conv2_out + self.shortcut(x)
         out = F.relu(out)
+            
         return out, conv1_out, conv2_out
 
 
@@ -161,6 +163,20 @@ class ResNet(nn.Module):
             out, conv1_out, conv2_out = self.layer1._modules[layer_name](out)
             ret_dict['layer1_{}_conv1'.format(i)] = conv1_out
             ret_dict['layer1_{}_conv2'.format(i)] = conv2_out
+            
+            #test scale
+            #test conv scale
+            # if i ==0:
+                # print(self.layer1._modules[layer_name])
+                # print(self.layer1._modules[layer_name][0].conv1)
+            # if i == 0 and self.layer1._modules[layer_name][0].conv1.scale.grad != None:
+            #     # print('---\nscale is ', self.layer1._modules[layer_name][0].conv1.scale.data)# float32
+            #     print("scale grad is", self.layer1._modules[layer_name][0].conv1.scale.grad, " \n") # scale的梯度为0，为什么
+            #     if torch.equal(self.layer1._modules[layer_name][0].conv1.scale.grad, torch.tensor(0.0).cuda()):
+            #     # if self.layer1._modules[layer_name][0].conv1.scale.grad == torch.tensor(0.0):
+            #         print('true')
+            #     else:
+            #         print('false')
 
         layer_names = self.layer2._modules.keys()
         for i, layer_name in enumerate(layer_names):

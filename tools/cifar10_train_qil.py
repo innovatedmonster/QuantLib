@@ -20,6 +20,7 @@ device = None
 
 
 def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, postfix_dict):
+    global device
     model.train()
     total_step = len(dataloader)
 
@@ -37,7 +38,23 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
             log_dict[k] = v.item()
 
         loss['loss'].backward()
+        
+        #test scale grad
+        # layer_names = model.layer1._modules.keys()
+        # for i, layer_name in enumerate(layer_names):
+        #     if i == 0 and model.layer1._modules[layer_name][0].conv1.scale.grad != None:
+        #         model.layer1._modules[layer_name][0].conv1.scale.grad.zero_()
+        #         print('---\nscale is ', model.layer1._modules[layer_name][0].conv1.scale.data)# float32
+        #         print("scale grad is", model.layer1._modules[layer_name][0].conv1.scale.grad, " \n") # scale的梯度为0，为什么
+        #         # if torch.equal(model.layer1._modules[layer_name][0].conv1.scale.grad, torch.tensor(0.0).cuda()):
+        #         if torch.all(model.layer1._modules[layer_name][0].conv1.scale.grad == 0):
+        #         # if self.layer1._modules[layer_name][0].conv1.scale.grad == torch.tensor(0.0):
+        #             print('true')
+        #         else:
+        #             print('false')
+        
         optimizer.step()
+        
 
         # logging
         f_epoch = epoch + i / total_step
@@ -102,6 +119,7 @@ def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, p
 
 
 def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, start_epoch):
+    global device
     num_epochs = config.train.num_epochs
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
@@ -137,6 +155,7 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
 
 
 def run(config):
+    global device
     model = get_model(config).to(device)
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
@@ -182,6 +201,10 @@ def count_parameters(model):
 
 
 def main(args):
+    if torch.cuda.is_available():
+        torch.cuda.init()
+        torch.cuda.set_device(0)
+    
     global device
     global model_type
     model_type = 'model'
