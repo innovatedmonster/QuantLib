@@ -65,20 +65,21 @@ class QILConv2d(nn.Conv2d):
         self.set_quant_config()
         
         # test, 设置初始最大最小阈值接近真实最大最小
-        x_max, _imax = torch.max(torch.abs(x))
-        x_min, _imin = torch.min(torch.abs(x))
-        if x_min.item() < tmp_min:
-            tmp_min = torch.clone(x_min.item())
-        if x_max.item() > tmp_max.item():
-            tmp_max = torch.clone(x_max.item())
+        # print(x.shape, torch.abs(x).shape)
+        x_max = torch.max(torch.abs(x))
+        x_min = torch.min(torch.abs(x))
+        if x_min < self.tmp_min:
+            self.tmp_min = torch.clone(x_min)
+        if x_max > self.tmp_max:
+            self.tmp_max = torch.clone(x_max)
         
         if self.init:
             if self.quant_wgt:
-                self.c_W.data = torch.tensor((tmp_max+tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
-                self.d_W.data = torch.tensor((tmp_max-tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
+                self.c_W.data = torch.tensor((self.tmp_max+self.tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
+                self.d_W.data = torch.tensor((self.tmp_max-self.tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
             if self.quant_act:
-                self.c_X.data = torch.tensor((tmp_max+tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
-                self.d_X.data = torch.tensor((tmp_max-tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
+                self.c_X.data = torch.tensor((self.tmp_max+self.tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
+                self.d_X.data = torch.tensor((self.tmp_max-self.tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
         
         curr_running_cW = self.c_W
         curr_running_dW = self.d_W
