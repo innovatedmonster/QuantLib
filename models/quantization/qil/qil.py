@@ -24,6 +24,9 @@ class QILConv2d(nn.Conv2d):
         self.step = 0
         self.observer_step = observer_step
         
+        #add
+        self.tmp_min = 1.0
+        self.tmp_max = 10.0
         
         self.register_buffer('init', torch.tensor(1).float().cuda())
         # test 新增缩放因子scale 和 创建c_W, d_W, c_X, d_X
@@ -61,13 +64,21 @@ class QILConv2d(nn.Conv2d):
         self.step += 1
         self.set_quant_config()
         
+        # test, 设置初始最大最小阈值接近真实最大最小
+        x_max, _imax = torch.max(torch.abs(x), dim=None)
+        x_min, _imin = torch.min(torch.abs(x), dim=None)
+        if x_min < tmp_min:
+            tmp_min = torch.clone(x_min)
+        if x_max > tmp_max:
+            tmp_max = torch.clone(x_max)
+        
         if self.init:
             if self.quant_wgt:
-                self.c_W.data = torch.tensor(0.1).cuda()
-                self.d_W.data = torch.tensor(0.05).cuda()
+                self.c_W.data = torch.tensor((tmp_max+tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
+                self.d_W.data = torch.tensor((tmp_max-tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
             if self.quant_act:
-                self.c_X.data = torch.tensor(0.1).cuda()
-                self.d_X.data = torch.tensor(0.05).cuda()
+                self.c_X.data = torch.tensor((tmp_max+tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
+                self.d_X.data = torch.tensor((tmp_max-tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
         
         curr_running_cW = self.c_W
         curr_running_dW = self.d_W
@@ -271,13 +282,11 @@ class FunTSF(torch.autograd.Function):
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
 
-            # 统计张量中的0和1的个数
-            count_zeros = torch.sum(between == 0).item()
-            count_ones = torch.sum(between == 1).item()
-
-            # 打印结果
-            print("Number of zeros:", count_zeros)
-            print("Number of ones:", count_ones)
+            # test 统计张量中的0和1的个数，0多1少，bug可能，导致梯度消失
+            # count_zeros = torch.sum(between == 0).item()
+            # count_ones = torch.sum(between == 1).item()
+            # print("Number of zeros:", count_zeros)
+            # print("Number of ones:", count_ones)
             
             # print('\n---\nwgt\ngrad_output', grad_outputs)
             
