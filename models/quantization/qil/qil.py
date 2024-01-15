@@ -271,7 +271,9 @@ class FunTSF(torch.autograd.Function):
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
 
-            print('\n---\nwgt\grad_output', grad_outputs)
+            print('\n---\nwgt\nbetween', between)
+            # print('\n---\nwgt\ngrad_output', grad_outputs)
+            
             # print('\n---\nwgt\ngrad_input', grad_input)
             # print('grad_c_delta', grad_c_delta.sum(0))
             # print('grad_d_delta', grad_d_delta.sum(0))
