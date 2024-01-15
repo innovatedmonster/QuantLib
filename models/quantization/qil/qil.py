@@ -98,7 +98,6 @@ class QILConv2d(nn.Conv2d):
         #     self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        output.retain_grad()
         output = self.scale * output
         # bug here, scale grad is 0
         # print('---\nscale is ', self.scale.data)# float32
@@ -109,7 +108,7 @@ class QILConv2d(nn.Conv2d):
         #     print('false')
         
         # print('output is ', output)
-        print('output grad is ', output.grad)
+        # print('output grad is ', output.grad)
         return output
 
 class QILActQuantizer(nn.Module):
@@ -272,9 +271,9 @@ class FunTSF(torch.autograd.Function):
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
 
-            # print('grad_input', grad_input)
-            # print('grad_c_delta', grad_c_delta.sum())
-            # print('grad_d_delta', grad_d_delta)
+            print('\n---\nwgt\ngrad_input', grad_input)
+            print('grad_c_delta', grad_c_delta.sum(0))
+            print('grad_d_delta', grad_d_delta.sum(0))
             
             # 疑问，这里为什么使用.sum(0)
             return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None # test,暂时不返回grad_gamma
@@ -286,6 +285,10 @@ class FunTSF(torch.autograd.Function):
             grad_c_delta = - alpha * grad_outputs * between # c_delta 偏导数
             grad_d_delta = (alpha / d_delta) * (c_delta - x) * grad_outputs * between # d_delta 偏导数
 
+            print('\n---\nact\ngrad_input', grad_input)
+            print('grad_c_delta', grad_c_delta.sum(0))
+            print('grad_d_delta', grad_d_delta.sum(0))
+            
             return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None
         else:
             raise NotImplementedError()
