@@ -40,18 +40,18 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
         loss['loss'].backward()
         
         # test scale grad
-        layer_names = model.layer1._modules.keys()
-        for i, layer_name in enumerate(layer_names):
-            if i == 0 and model.layer1._modules[layer_name][0].conv1.scale.grad != None:
-                model.layer1._modules[layer_name][0].conv1.scale.grad.zero_()
-                print('---\nscale is ', model.layer1._modules[layer_name][0].conv1.scale.data)# float32
-                print("scale grad is", model.layer1._modules[layer_name][0].conv1.scale.grad, " \n") # scale的梯度为0，为什么
-                # if torch.equal(model.layer1._modules[layer_name][0].conv1.scale.grad, torch.tensor(0.0).cuda()):
-                if torch.all(model.layer1._modules[layer_name][0].conv1.scale.grad == 0):
-                # if self.layer1._modules[layer_name][0].conv1.scale.grad == torch.tensor(0.0):
-                    print('true')
-                else:
-                    print('false')
+        # layer_names = model.layer1._modules.keys()
+        # for i, layer_name in enumerate(layer_names):
+        #     if i == 0 and model.layer1._modules[layer_name][0].conv1.scale.grad != None:
+        #         model.layer1._modules[layer_name][0].conv1.scale.grad.zero_()
+        #         print('---\nscale is ', model.layer1._modules[layer_name][0].conv1.scale.data)# float32
+        #         print("scale grad is", model.layer1._modules[layer_name][0].conv1.scale.grad, " \n") # scale的梯度为0，为什么
+        #         # if torch.equal(model.layer1._modules[layer_name][0].conv1.scale.grad, torch.tensor(0.0).cuda()):
+        #         if torch.all(model.layer1._modules[layer_name][0].conv1.scale.grad == 0):
+        #         # if self.layer1._modules[layer_name][0].conv1.scale.grad == torch.tensor(0.0):
+        #             print('true')
+        #         else:
+        #             print('false')
         
         optimizer.step()
         
