@@ -143,8 +143,8 @@ class QILActQuantizer(nn.Module):
                 
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
-            x = Discretizer.apply(transform_x, self.quant_level)
-            # x = Round.apply(transform_x * self.quant_level) / self.quant_level
+            # x = Discretizer.apply(transform_x, self.quant_level)
+            x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
         return x
 
@@ -183,8 +183,8 @@ class QILWeightQuantizer(nn.Module):
                 pass
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
-            x = Discretizer.apply(transform_x, self.quant_level)
-            # x = Round.apply(transform_x * self.quant_level) / self.quant_level
+            # x = Discretizer.apply(transform_x, self.quant_level)
+            x = Round.apply(transform_x * self.quant_level) / self.quant_level
         # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
         return x
 
@@ -271,9 +271,9 @@ class FunTSF(torch.autograd.Function):
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
 
-            print('\n---\nwgt\ngrad_input', grad_input)
-            print('grad_c_delta', grad_c_delta.sum(0))
-            print('grad_d_delta', grad_d_delta.sum(0))
+            # print('\n---\nwgt\ngrad_input', grad_input)
+            # print('grad_c_delta', grad_c_delta.sum(0))
+            # print('grad_d_delta', grad_d_delta.sum(0))
             
             # 疑问，这里为什么使用.sum(0)
             return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None # test,暂时不返回grad_gamma
@@ -285,9 +285,9 @@ class FunTSF(torch.autograd.Function):
             grad_c_delta = - alpha * grad_outputs * between # c_delta 偏导数
             grad_d_delta = (alpha / d_delta) * (c_delta - x) * grad_outputs * between # d_delta 偏导数
 
-            print('\n---\nact\ngrad_input', grad_input)
-            print('grad_c_delta', grad_c_delta.sum(0))
-            print('grad_d_delta', grad_d_delta.sum(0))
+            # print('\n---\nact\ngrad_input', grad_input)
+            # print('grad_c_delta', grad_c_delta.sum(0))
+            # print('grad_d_delta', grad_d_delta.sum(0))
             
             return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None
         else:
