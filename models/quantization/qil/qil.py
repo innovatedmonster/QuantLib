@@ -106,7 +106,7 @@ class QILConv2d(nn.Conv2d):
             else:
                 self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
             if self.scale.data < 1e-4: # 防止scale初始化为0，从而grad一直为0
-                self.scale.data = torch.FloatTensor(1).uniform_(1.0, 10.0).cuda()
+                self.scale.data = torch.FloatTensor(1).uniform_(0.5, 1.0).cuda()
             self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
