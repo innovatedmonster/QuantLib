@@ -161,12 +161,12 @@ def run(config):
     criterion = get_loss(config)
 
     # test model.param
-    path_log_opt_param = os.path.join(config.logger.params.path_log, config.logger.params.path_log_opt_param)
-    logger_opt_param = Logger(path_log_opt_param)
+    # path_log_opt_param = os.path.join(config.logger.params.path_log, config.logger.params.path_log_opt_param)
+    # logger_opt_param = Logger(path_log_opt_param)
     
-    for name, param in model.named_parameters():
-        logger_opt_param.write(name + '\n')
-    logger_opt_param.flush()
+    # for name, param in model.named_parameters():
+    #     logger_opt_param.write(name + '\n')
+    # logger_opt_param.flush()
     # test model.param
     
     optimizer = get_optimizer(config, model.parameters())
