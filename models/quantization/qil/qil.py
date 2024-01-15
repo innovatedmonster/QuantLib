@@ -271,7 +271,14 @@ class FunTSF(torch.autograd.Function):
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
 
-            print('\n---\nwgt\nbetween', between)
+            # 统计张量中的0和1的个数
+            count_zeros = torch.sum(between == 0).item()
+            count_ones = torch.sum(between == 1).item()
+
+            # 打印结果
+            print("Number of zeros:", count_zeros)
+            print("Number of ones:", count_ones)
+            
             # print('\n---\nwgt\ngrad_output', grad_outputs)
             
             # print('\n---\nwgt\ngrad_input', grad_input)
