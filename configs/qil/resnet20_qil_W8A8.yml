@@ -56,7 +56,7 @@ loss:
 
 logger:
   params:
-    path_log: '/home/workspace/lfh/haq_lsq/QuantLib/log4test/'
+    path_log: '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
     path_log_opt_param: 'optimizer_param.log'
 
 gpu: 0

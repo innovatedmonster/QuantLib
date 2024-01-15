@@ -94,16 +94,19 @@ class QILConv2d(nn.Conv2d):
             else:
                 self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
             self.init = torch.tensor(0)
+            print('inside the init!!!')
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        output = torch.abs(self.scale) * output
+        output = self.scale * output
         # bug here, scale grad is 0
         # test scale and scale.grad
-        print('scale is ', self.scale.data)
-        print('scale grad is ', self.scale.grad) # scale的梯度为0，为什么
+        # print('scale is ', self.scale.data)
+        # if self.scale.grad != None:
+        #     print('scale is ', self.scale.data)
+        #     print(f"scale grad is {self.scale.grad:.10f}") # scale的梯度为0，为什么
         
-        print('output is ', output)
-        print('output grad is ', output.grad)
+        # print('output is ', output)
+        # print('output grad is ', output.grad)
         return output
 
 class QILActQuantizer(nn.Module):
