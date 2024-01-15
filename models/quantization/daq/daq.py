@@ -134,8 +134,11 @@ class DAQConv2d(nn.Conv2d):
         return output
 
     def forward(self, x):
+        # bug here, 原版的DAQ根本没进入量化的程序，直接返回浮点数的数值
         if not self.quant_act or not self.quant_wgt:
-            return F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            print('not into the Quant')# 原来DAQ不print的原因在这里！！！它的代码有问题，根本没量化！！！坑爹呀
+            # return F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            pass
 
         if self.init:
             if self.quant_wgt:
@@ -183,6 +186,6 @@ class DAQConv2d(nn.Conv2d):
 
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.beta) * output
-        # print('daq beta is ', self.beta.data) #不知为什么，无法print
+        print('daq beta is ', self.beta.data) #不知为什么，无法print
         
         return output

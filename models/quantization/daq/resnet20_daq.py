@@ -222,7 +222,7 @@ class QConv(nn.Conv2d):
             output = torch.abs(self.beta) * output
         else:
             output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-
+        
         return output
 
 

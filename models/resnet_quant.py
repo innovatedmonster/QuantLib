@@ -177,6 +177,9 @@ class ResNet(nn.Module):
             #         print('true')
             #     else:
             #         print('false')
+            # print('---\ndaq beta is ', self.layer1._modules[layer_name][0].conv1.beta)
+            # print('its grad is ', self.layer1._modules[layer_name][0].conv1.beta.grad)
+            # print(self.layer1._modules[layer_name][0].conv1)
 
         layer_names = self.layer2._modules.keys()
         for i, layer_name in enumerate(layer_names):

@@ -55,6 +55,25 @@ def train_single_epoch(model, dataloader, criterion, optimizer, q_optimizer, epo
             log_dict[k] = v.item()
 
         loss['loss'].backward()
+        
+        # test beta grad
+        # layer_names = model.layer1._modules.keys()
+        # for i, layer_name in enumerate(layer_names):
+        #     if i == 0:
+        #         print('---\ni is ', i, 'and model.layer1._modules[layer_name][0].conv1.beta.grad is ', \
+        #         model.layer1._modules[layer_name][0].conv1.beta.grad)
+        #         print('beta is ', model.layer1._modules[layer_name][0].conv1.beta)
+        #     if i == 0 and model.layer1._modules[layer_name][0].conv1.beta.grad != None:
+        #         model.layer1._modules[layer_name][0].conv1.beta.grad.zero_()
+        #         print('---\nbeta is ', model.layer1._modules[layer_name][0].conv1.beta.data)# float32
+        #         print("beta grad is", model.layer1._modules[layer_name][0].conv1.beta.grad, " \n") # beta
+        #         # if torch.equal(model.layer1._modules[layer_name][0].conv1.beta.grad, torch.tensor(0.0).cuda()):
+        #         if torch.all(model.layer1._modules[layer_name][0].conv1.beta.grad == 0):
+        #         # if self.layer1._modules[layer_name][0].conv1.beta.grad == torch.tensor(0.0):
+        #             print('true')
+        #         else:
+        #             print('false')
+        
         optimizer.step()
         q_optimizer.step()
 
