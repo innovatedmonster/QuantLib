@@ -96,18 +96,18 @@ class QILConv2d(nn.Conv2d):
         else:
             wgt = self.weight
 
-        # if self.init == 1:
-        #     # scale factor initialization
-        #     q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-        #     ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        #     # bug fixed, 发现bug NaN的原因是除数是0！！！
-        #     if torch.mean(torch.abs(q_output)).data < 0.001:
-        #         self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
-        #     else:
-        #         self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-        #     if self.scale.data < 1e-4: # 防止scale初始化为0，从而grad一直为0
-        #         self.scale.data = torch.FloatTensor(1).uniform_(1.0, 10.0).cuda()
-        #     self.init = torch.tensor(0)
+        if self.init == 1:
+            # scale factor initialization
+            q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
+            ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            # bug fixed, 发现bug NaN的原因是除数是0！！！
+            if torch.mean(torch.abs(q_output)).data < 0.001:
+                self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
+            else:
+                self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
+            if self.scale.data < 1e-4: # 防止scale初始化为0，从而grad一直为0
+                self.scale.data = torch.FloatTensor(1).uniform_(1.0, 10.0).cuda()
+            self.init = torch.tensor(0)
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.scale) * output
