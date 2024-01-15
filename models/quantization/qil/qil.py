@@ -65,12 +65,12 @@ class QILConv2d(nn.Conv2d):
         self.set_quant_config()
         
         # test, 设置初始最大最小阈值接近真实最大最小
-        x_max, _imax = torch.max(torch.abs(x)).item()
-        x_min, _imin = torch.min(torch.abs(x)).item()
-        if x_min < tmp_min:
-            tmp_min = torch.clone(x_min)
-        if x_max > tmp_max:
-            tmp_max = torch.clone(x_max)
+        x_max, _imax = torch.max(torch.abs(x))
+        x_min, _imin = torch.min(torch.abs(x))
+        if x_min.item() < tmp_min:
+            tmp_min = torch.clone(x_min.item())
+        if x_max.item() > tmp_max.item():
+            tmp_max = torch.clone(x_max.item())
         
         if self.init:
             if self.quant_wgt:
