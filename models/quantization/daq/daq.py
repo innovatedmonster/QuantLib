@@ -186,6 +186,6 @@ class DAQConv2d(nn.Conv2d):
 
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
         output = torch.abs(self.beta) * output
-        print('daq beta is ', self.beta.data) #不知为什么，无法print
+        # print('daq beta is ', self.beta.data) #不知为什么，无法print, 因为根本没运行到这里
         
         return output
