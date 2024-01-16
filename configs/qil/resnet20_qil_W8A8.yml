@@ -24,12 +24,12 @@ model:
     quant: True
     observer: True
     learning: True
-    observer_step: 1960  # 10 epoch 时设置为 1960
+    observer_step: 196000  # 10 epoch 时设置为 1960
 
 train:
   dir: "./output"
   batch_size: 256
-  num_epochs: 400
+  num_epochs: 200
   model_dir: '_qil_W8A8'
   save_model_frequency: 1
 
