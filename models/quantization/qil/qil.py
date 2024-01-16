@@ -24,19 +24,20 @@ class QILConv2d(nn.Conv2d):
         self.step = 0
         self.observer_step = observer_step
         
-        #add
-        self.tmp_min = 1.0
-        self.tmp_max = 10.0
         
         self.register_buffer('init', torch.tensor(1).float().cuda())
         # test 新增缩放因子scale 和 创建c_W, d_W, c_X, d_X
         if self.quant_wgt:
             self.c_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
+            self.c_W.data = torch.tensor(0.0) 
             self.d_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
+            self.d_W.data = torch.tensor(0.0) 
             self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
         if self.quant_act:
             self.c_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
+            self.c_X.data = torch.tensor(0.0) 
             self.d_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
+            self.d_X.data = torch.tensor(0.0)
         
         self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
         self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
@@ -66,21 +67,17 @@ class QILConv2d(nn.Conv2d):
         
         # test, 设置初始最大最小阈值接近真实最大最小
         # print(x.shape, torch.abs(x).shape)
-        x_max = torch.max(torch.abs(x))
-        x_min = torch.min(torch.abs(x))
-        if x_min < self.tmp_min:
-            self.tmp_min = torch.clone(x_min)
-        if x_max > self.tmp_max:
-            self.tmp_max = torch.clone(x_max)
+        # x_max = torch.max(torch.abs(x))
+        # x_min = torch.min(torch.abs(x))
+        # if x_min < self.tmp_min:
+        #     self.tmp_min = torch.clone(x_min)
+        # if x_max > self.tmp_max:
+        #     self.tmp_max = torch.clone(x_max)
         
         if self.init:
-            if self.quant_wgt:
-                self.c_W.data = torch.tensor((self.tmp_max+self.tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
-                self.d_W.data = torch.tensor((self.tmp_max-self.tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
-            if self.quant_act:
-                self.c_X.data = torch.tensor((self.tmp_max+self.tmp_min)/2).cuda()#torch.tensor(0.1).cuda()
-                self.d_X.data = torch.tensor((self.tmp_max-self.tmp_min)/2).cuda()#torch.tensor(0.05).cuda()
-        
+            pass
+            # self.init = torch.tensor(0)
+
         curr_running_cW = self.c_W
         curr_running_dW = self.d_W
 
@@ -141,17 +138,28 @@ class QILActQuantizer(nn.Module):
             self.quant_level = 2 ** (self.bits - 1) - 1
         self.observer_init = torch.tensor(1, dtype=torch.int8)
         self.transformer = Transformer('activation', gamma_fix)
+        
 
     def forward(self, x, c_delta, d_delta):
         if not self.quant:
             return x
         if self.observer:
             if self.observer_init == 1:
-                # self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                self.tmp_max = torch.max(torch.abs(x))
+                self.tmp_min = torch.min(torch.abs(x))
+                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+                
                 self.observer_init = 0
             else:
-                # self.scale.data[0] = 0.9*self.scale.data[0] + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
-                pass
+                x_max = torch.max(torch.abs(x))
+                x_min = torch.min(torch.abs(x))
+                if x_max > self.tmp_max:
+                    self.tmp_max = x_max
+                if x_min < self.tmp_min:
+                    self.tmp_min = x_min
+                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
                 
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
@@ -165,10 +173,13 @@ class QILWeightQuantizer(nn.Module):
     def __init__(self, bits, gamma_fix=False, qtype="qint", per_channel=False, quant=False, observer=False, learning=False):
         super(QILWeightQuantizer, self).__init__()
         self.bits = bits
+        self.step = 0
         self.qtype = qtype
         self.quant = quant
         self.observer = observer
         self.learning = learning
+        self.tmp_max = 0.0
+        self.tmp_min = 0.0
         assert self.bits != 1, "QIL don't support binary quantization"
         assert self.qtype in ("qint", "quint"), "qil weight qtype just support qint or quint"
         if self.qtype == "quint":
@@ -182,17 +193,29 @@ class QILWeightQuantizer(nn.Module):
         self.transformer = Transformer('weight', gamma_fix)
 
     def forward(self, x, c_delta, d_delta):
+        self.step += 1
         if not self.quant:
             return x
         assert self.per_channel != True, "QIL don't support per_channel quant"
         # 没想好如何动态调整c_delta和d_delta
         if self.observer:
             if self.observer_init == 1:
-                # self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                self.tmp_max = torch.max(torch.abs(x))
+                self.tmp_min = torch.min(torch.abs(x))
+                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+                
                 self.observer_init = 0
             else:
-                # self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
-                pass
+                x_max = torch.max(torch.abs(x))
+                x_min = torch.min(torch.abs(x))
+                if x_max > self.tmp_max:
+                    self.tmp_max = x_max
+                if x_min < self.tmp_min:
+                    self.tmp_min = x_min
+                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+                
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
             # x = Discretizer.apply(transform_x, self.quant_level)
