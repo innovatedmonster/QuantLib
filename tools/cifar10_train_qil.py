@@ -8,7 +8,7 @@ from tensorboardX import SummaryWriter
 from datasets.cifar10 import Cifar10
 from models import get_model
 from losses import get_loss
-from optimizers import get_optimizer
+from optimizers import get_optimizer, get_q_optimizer
 from schedulers import get_scheduler
 from utils.metrics import accuracy
 from utils.metrics import AverageMeter
@@ -16,11 +16,28 @@ import utils.config
 import utils.checkpoint
 from utils.util import Logger
 
+# path
+path_log = './log4test/'
+path_log_opt_param = os.path.join(path_log, 'optimizer_param_qil.log')
+path_log_opt_qparam = os.path.join(path_log, 'optimizer_qparam_qil.log')
+path_log_model = os.path.join(path_log, 'model.log')
+
+if os.path.exists(path_log_opt_param):
+    os.remove(path_log_opt_param)
+if os.path.exists(path_log_opt_qparam):
+    os.remove(path_log_opt_qparam)
+if os.path.exists(path_log_model):
+    os.remove(path_log_model)
+
+# logger for test
+logger_opt_param = Logger(path_log_opt_param)
+logger_opt_qparam = Logger(path_log_opt_qparam)
+logger_model = Logger(path_log_model)
+
 device = None
 
 
-def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, postfix_dict):
-    global device
+def train_single_epoch(model, dataloader, criterion, optimizer, q_optimizer, epoch, writer, postfix_dict):
     model.train()
     total_step = len(dataloader)
 
@@ -31,6 +48,7 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
         imgs = imgs.to(device)
         labels = labels.to(device)
         optimizer.zero_grad()
+        q_optimizer.zero_grad()
 
         pred_dict = model(imgs)
         loss = criterion['train'](pred_dict['out'], labels)
@@ -39,22 +57,26 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
 
         loss['loss'].backward()
         
-        # test scale grad
+        # test beta grad
         # layer_names = model.layer1._modules.keys()
         # for i, layer_name in enumerate(layer_names):
-        #     if i == 0 and model.layer1._modules[layer_name][0].conv1.scale.grad != None:
-        #         model.layer1._modules[layer_name][0].conv1.scale.grad.zero_()
-        #         print('---\nscale is ', model.layer1._modules[layer_name][0].conv1.scale.data)# float32
-        #         print("scale grad is", model.layer1._modules[layer_name][0].conv1.scale.grad, " \n") # scale的梯度为0，为什么
-        #         # if torch.equal(model.layer1._modules[layer_name][0].conv1.scale.grad, torch.tensor(0.0).cuda()):
-        #         if torch.all(model.layer1._modules[layer_name][0].conv1.scale.grad == 0):
-        #         # if self.layer1._modules[layer_name][0].conv1.scale.grad == torch.tensor(0.0):
+        #     if i == 0:
+        #         print('---\ni is ', i, 'and model.layer1._modules[layer_name][0].conv1.beta.grad is ', \
+        #         model.layer1._modules[layer_name][0].conv1.beta.grad)
+        #         print('beta is ', model.layer1._modules[layer_name][0].conv1.beta)
+        #     if i == 0 and model.layer1._modules[layer_name][0].conv1.beta.grad != None:
+        #         model.layer1._modules[layer_name][0].conv1.beta.grad.zero_()
+        #         print('---\nbeta is ', model.layer1._modules[layer_name][0].conv1.beta.data)# float32
+        #         print("beta grad is", model.layer1._modules[layer_name][0].conv1.beta.grad, " \n") # beta
+        #         # if torch.equal(model.layer1._modules[layer_name][0].conv1.beta.grad, torch.tensor(0.0).cuda()):
+        #         if torch.all(model.layer1._modules[layer_name][0].conv1.beta.grad == 0):
+        #         # if self.layer1._modules[layer_name][0].conv1.beta.grad == torch.tensor(0.0):
         #             print('true')
         #         else:
         #             print('false')
         
         optimizer.step()
-        
+        q_optimizer.step()
 
         # logging
         f_epoch = epoch + i / total_step
@@ -118,8 +140,7 @@ def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, p
         return log_dict['top1'], log_dict['top5']
 
 
-def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, start_epoch):
-    global device
+def train(config, model, dataloaders, criterion, optimizer, q_optimizer, scheduler, q_scheduler, writer, start_epoch):
     num_epochs = config.train.num_epochs
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
@@ -134,25 +155,70 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
 
     for epoch in range(start_epoch, num_epochs):
         # train phase
-        train_single_epoch(model, dataloaders['train'], criterion, optimizer, epoch, writer, postfix_dict)
+        train_single_epoch(model, dataloaders['train'], criterion, optimizer, q_optimizer,
+                           epoch, writer, postfix_dict)
 
         # test phase
         top1, top5 = evaluate_single_epoch(device, model, dataloaders['test'], criterion, epoch, writer,
                                            postfix_dict, eval_type='test')
         scheduler.step()
+        q_scheduler.step()
 
         if best_accuracy < top1:
             best_accuracy = top1
 
         if epoch % config.train.save_model_frequency == 0:
-            utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler,
-                                             None, None, None, None, epoch, 0, 'model')
+            utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler, q_optimizer,
+                                             q_scheduler, None, None, epoch, 0, 'model')
 
-    utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler,
-                                     None, None, None, None, epoch, 0, 'model')
+    utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler, q_optimizer,
+                                     q_scheduler, None, None, epoch, 0, 'model')
 
     return {'best_accuracy': best_accuracy}
 
+def qparam_extract(model, logger):
+    global test_idx
+    var = list()
+    for m in model._modules:
+        if len(model._modules[m]._modules) > 0:
+            var = var + qparam_extract(model._modules[m], logger)
+        else:
+            if hasattr(model._modules[m], 'init'):
+                # print("qparam: ", list(model._modules[m].parameters())[1:])
+                var = var + list(model._modules[m].parameters())[1:]
+                logger.write('---q_ext ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
+                logger.write('len(param) is ' + \
+                    str(len(list(model._modules[m].parameters())[1:])) + '\n')
+                logger.write('param is: \n')
+                for elemet in list(model._modules[m].parameters())[1:]:
+                    logger.write(str(elemet.shape) + '\n')
+                # logger.write('[0] shape is ' + \
+                #     str(list(model._modules[m].parameters())[0].shape)+'\n\n')
+                test_idx = test_idx + 1
+    return var
+
+# 获取所有算子的参数
+# 其中排除量化算子DAQConv2d的三个参数uW, lW, beta
+def param_extract(model, logger):
+    global test_idx
+    var = list()
+    for m in model._modules:
+        if len(model._modules[m]._modules) > 0:
+            var = var + param_extract(model._modules[m], logger)
+        else:
+            from models.quantization.daq.daq import DAQConv2d
+            # logger.write('---fp_one ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
+            # for elemet in list(model._modules[m].parameters()):
+            #     logger.write(str(elemet.shape) + '\n')
+            if isinstance(model._modules[m], DAQConv2d):
+                print("type", type(model._modules[m]))
+            if hasattr(model._modules[m], 'init'):
+                # print("param: ", list(model._modules[m].parameters())[0:1])
+                var = var + list(model._modules[m].parameters())[0:1]
+            else:
+                var = var + list(model._modules[m].parameters())
+            test_idx = test_idx + 1
+    return var
 
 def run(config):
     global device
@@ -169,7 +235,23 @@ def run(config):
     # logger_opt_param.flush()
     # test model.param
     
-    optimizer = get_optimizer(config, model.parameters())
+    q_param = qparam_extract(model, logger_opt_qparam)
+    param = param_extract(model, logger_opt_qparam)
+    
+    # test q_param and models.param
+    for name, _param in model.named_parameters():
+        logger_opt_param.write(name + '\n')
+    logger_opt_param.flush()
+    
+    param_str = '\n\n-----type of param and q_param is ' + str(type(param)) \
+        + ' ' + str(type(q_param)) \
+        + '\nlen(param) is ' + str(len(param))\
+        + '\nlen(q_param) is ' + str(len(q_param)) + '\n\n'
+    logger_opt_qparam.write(param_str)
+    logger_opt_qparam.flush()
+    
+    optimizer = get_optimizer(config, param)
+    q_optimizer = get_q_optimizer(config, q_param)
 
     # Loading the full-precision model
     if config.model.pretrain.pretrained:
@@ -184,7 +266,9 @@ def run(config):
     checkpoint = utils.checkpoint.get_initial_checkpoint(config, model_type)
     last_epoch, step = -1, -1
     print('model from checkpoint: {} last epoch:{}'.format(checkpoint, last_epoch))
+    
     scheduler = get_scheduler(config, optimizer, last_epoch)
+    q_scheduler = get_scheduler(config, q_optimizer, last_epoch)
 
     cifar10 = Cifar10(data_path=config.data.data_path, train_batch_size=config.train.batch_size,
                       eval_batch_size=config.eval.batch_size,
@@ -193,7 +277,8 @@ def run(config):
 
     writer = SummaryWriter(config.train['model_dir'])
 
-    train(config, model, dataloaders, criterion, optimizer, scheduler, writer, last_epoch+1)
+    train(config, model, dataloaders, criterion, optimizer, q_optimizer,
+          scheduler, q_scheduler, writer, last_epoch+1)
 
 
 def count_parameters(model):
