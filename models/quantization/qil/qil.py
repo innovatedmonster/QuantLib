@@ -29,15 +29,11 @@ class QILConv2d(nn.Conv2d):
         # test 新增缩放因子scale 和 创建c_W, d_W, c_X, d_X
         if self.quant_wgt:
             self.c_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.c_W.data = torch.tensor(0.0) 
             self.d_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.d_W.data = torch.tensor(0.0) 
             self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
         if self.quant_act:
             self.c_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.c_X.data = torch.tensor(0.0) 
             self.d_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.d_X.data = torch.tensor(0.0)
         
         self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
         self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
@@ -64,19 +60,6 @@ class QILConv2d(nn.Conv2d):
     def forward(self, x):
         self.step += 1
         self.set_quant_config()
-        
-        # test, 设置初始最大最小阈值接近真实最大最小
-        # print(x.shape, torch.abs(x).shape)
-        # x_max = torch.max(torch.abs(x))
-        # x_min = torch.min(torch.abs(x))
-        # if x_min < self.tmp_min:
-        #     self.tmp_min = torch.clone(x_min)
-        # if x_max > self.tmp_max:
-        #     self.tmp_max = torch.clone(x_max)
-        
-        if self.init:
-            pass
-            # self.init = torch.tensor(0)
 
         curr_running_cW = self.c_W
         curr_running_dW = self.d_W
@@ -133,23 +116,23 @@ class QILActQuantizer(nn.Module):
     def forward(self, x, c_delta, d_delta):
         if not self.quant:
             return x
-        if self.observer:
-            if self.observer_init == 1:
-                self.tmp_max = torch.max(torch.abs(x))
-                self.tmp_min = torch.min(torch.abs(x))
-                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+        # if self.observer:
+        #     if self.observer_init == 1:
+        #         self.tmp_max = torch.max(torch.abs(x))
+        #         self.tmp_min = torch.min(torch.abs(x))
+        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
                 
-                self.observer_init = 0
-            else:
-                x_max = torch.max(torch.abs(x))
-                x_min = torch.min(torch.abs(x))
-                if x_max > self.tmp_max:
-                    self.tmp_max = x_max
-                if x_min < self.tmp_min:
-                    self.tmp_min = x_min
-                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+        #         self.observer_init = 0
+        #     else:
+        #         x_max = torch.max(torch.abs(x))
+        #         x_min = torch.min(torch.abs(x))
+        #         if x_max > self.tmp_max:
+        #             self.tmp_max = torch.clone(x_max)
+        #         if x_min < self.tmp_min:
+        #             self.tmp_min = torch.clone(x_min)
+        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
                 
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
@@ -188,23 +171,23 @@ class QILWeightQuantizer(nn.Module):
             return x
         assert self.per_channel != True, "QIL don't support per_channel quant"
         # 没想好如何动态调整c_delta和d_delta
-        if self.observer:
-            if self.observer_init == 1:
-                self.tmp_max = torch.max(torch.abs(x))
-                self.tmp_min = torch.min(torch.abs(x))
-                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+        # if self.observer:
+        #     if self.observer_init == 1:
+        #         self.tmp_max = torch.max(torch.abs(x))
+        #         self.tmp_min = torch.min(torch.abs(x))
+        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
                 
-                self.observer_init = 0
-            else:
-                x_max = torch.max(torch.abs(x))
-                x_min = torch.min(torch.abs(x))
-                if x_max > self.tmp_max:
-                    self.tmp_max = x_max
-                if x_min < self.tmp_min:
-                    self.tmp_min = x_min
-                c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-                d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
+        #         self.observer_init = 0
+        #     else:
+        #         x_max = torch.max(torch.abs(x))
+        #         x_min = torch.min(torch.abs(x))
+        #         if x_max > self.tmp_max:
+        #             self.tmp_max = torch.clone(x_max)
+        #         if x_min < self.tmp_min:
+        #             self.tmp_min = torch.clone(x_min)
+        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
+        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
                 
         if self.observer or self.learning:
             transform_x = self.transformer(x, c_delta, d_delta)
@@ -263,6 +246,7 @@ class FunTSF(torch.autograd.Function):
         smaller = (x < prun_point).float()
         bigger = (x > clip_point).float()
         between = 1.0 - smaller - bigger  # 得到位于量化区间的index
+
         
         if name == 'weight':
             x = (torch.pow((alpha * torch.abs(x)) + beta, gamma) * torch.sign(x)) * between
@@ -287,10 +271,13 @@ class FunTSF(torch.autograd.Function):
 
         # 当输入是weight
         if flag == 1:
+            # grad_abs = torch.sign(x)
+            # grad_abs = grad_abs + 1
+            # grad_abs = ((grad_abs+1e-6)/2).round()
+            # grad_abs = (2*grad_abs) - 1
             # 公共导数
-            common = (gamma * (alpha * absol.apply(x) + beta) ** (gamma-1)) * torch.sign(x)# bug可能，因为torch.sign处理求导机制不明
-
-            grad_input = (common * alpha) * grad_outputs * between # weight 偏导数
+            common = (gamma * (alpha * absol.apply(x) + beta) ** (gamma-1))* (torch.sign(x)+1e-6) # bug可能，因为torch.sign处理求导机制不明
+            grad_input = (common * (torch.sign(x)+1e-6) * alpha) * grad_outputs * between # weight 偏导数
             grad_c_delta = (-alpha * common) * grad_outputs * between # c_delta 偏导数
             grad_d_delta = (common * (alpha / d_delta) * (c_delta - absol.apply(x))) * grad_outputs * between # d_delta 偏导数
             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
@@ -308,8 +295,8 @@ class FunTSF(torch.autograd.Function):
             # print('grad_c_delta', grad_c_delta.sum(0))
             # print('grad_d_delta', grad_d_delta.sum(0))
             
-            # 疑问，这里为什么使用.sum(0)
-            return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None # test,暂时不返回grad_gamma
+            # 疑问，这里为什么使用.sum(0）沿着列维度求和
+            return grad_input, grad_c_delta, grad_d_delta, None, None # test,暂时不返回grad_gamma
         
         #当输入是activation
         elif flag == 0:
@@ -322,7 +309,7 @@ class FunTSF(torch.autograd.Function):
             # print('grad_c_delta', grad_c_delta.sum(0))
             # print('grad_d_delta', grad_d_delta.sum(0))
             
-            return grad_input, grad_c_delta.sum(0), grad_d_delta.sum(0), None, None
+            return grad_input, grad_c_delta, grad_d_delta, None, None
         else:
             raise NotImplementedError()
 

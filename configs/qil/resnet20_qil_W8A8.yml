@@ -24,7 +24,7 @@ model:
     quant: True
     observer: True
     learning: True
-    observer_step: 196000  # 10 epoch 时设置为 1960
+    observer_step: 1960  # 10 epoch 时设置为 1960
 
 train:
   dir: "./output"
