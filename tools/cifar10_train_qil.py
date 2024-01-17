@@ -35,7 +35,7 @@ logger_opt_qparam = Logger(path_log_opt_qparam)
 logger_model = Logger(path_log_model)
 
 device = None
-
+test_idx = 0
 
 def train_single_epoch(model, dataloader, criterion, optimizer, q_optimizer, epoch, writer, postfix_dict):
     model.train()
@@ -200,7 +200,6 @@ def qparam_extract(model, logger):
 # 获取所有算子的参数
 # 其中排除量化算子DAQConv2d的三个参数uW, lW, beta
 def param_extract(model, logger):
-    global test_idx
     var = list()
     for m in model._modules:
         if len(model._modules[m]._modules) > 0:
@@ -217,11 +216,11 @@ def param_extract(model, logger):
                 var = var + list(model._modules[m].parameters())[0:1]
             else:
                 var = var + list(model._modules[m].parameters())
-            test_idx = test_idx + 1
     return var
 
 def run(config):
     global device
+    global test_idx
     model = get_model(config).to(device)
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
