@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# 这个版本是将u, l替换成c, d表示的版本，阶段方式依然是DAQ的
 from __future__ import print_function, absolute_import
 
 import torch
@@ -42,24 +43,19 @@ class QILConv2d(nn.Conv2d):
         self.bit_range = 2**self.bits - 1
         
     def forward(self, x):
-        # daq的初始化分别是[-3.0, 3.0], [0, x.std()*3], 那qil呢？
         if self.init:
             if self.quant_wgt:
-                # self.c_W.data = torch.tensor(1.5).cuda()
-                # self.d_W.data = torch.tensor(1.5).cuda()
                 self.c_W.data = torch.tensor(0.0).cuda()
                 self.d_W.data = torch.tensor(3.0).cuda()
             if self.quant_act:
                 self.c_X.data = x.std() * 3 / 2
                 self.d_X.data = x.std() * 3 / 2
         
-        # bug可能存在，daq分别是[lw, uw], [0, ua], 那qil呢？
-        # self.preProcess()
+        # bug可能存在，因为如何可能并不是u>l
         curr_running_uw = self.c_W + self.d_W
         curr_running_lw = self.c_W - self.d_W
 
         curr_running_ua = self.c_X + self.d_X
-        # curr_running_la = self.c_X - self.d_X
         curr_running_la = 0
         
         # Weight normalization
@@ -101,15 +97,25 @@ class QILConv2d(nn.Conv2d):
         # output = torch.abs(self.scale) * output
         return output
     
+    # def val_quant(self, x, c_delta, d_delta, gamma_fix, name, qtype):
+    #     if qtype == "quint":
+    #         quant_level = 2 ** self.bits - 1
+    #     else:
+    #         quant_level = 2 ** (self.bits - 1) - 1
+    #     if not gamma_fix:
+    #         gamma = torch.tensor([1.0]).cuda()
+    #     else:
+    #         gamma = None
+            
+    #     transform_x = self.transformer(x, c_delta, d_delta, gamma, name)
+    #     x = Round.apply(transform_x * quant_level) / quant_level
+    #     return x
+    
     def clipping(self, x, upper, lower):
-        # smaller = (x < lower).float()
-        # bigger = (x > upper).float()
-        # between = 1.0 - smaller - bigger  # 得到位于量化区间的index
-        # x = x * between + upper * bigger + lower * smaller
-        
+        # clip lower
         x = x + F.relu(lower - x)
+        # clip upper
         x = x - F.relu(x - upper)
-        
         return x
 
     def wgt_quant(self, x, u, l):
@@ -122,6 +128,13 @@ class QILConv2d(nn.Conv2d):
         output = 2*(interval.round() + x_floor) - self.bit_range
         return output / self.bit_range
 
+    def wgt_soft_quant(self, x, u, l):
+        delta = (u - l) / self.bit_range # delta就是scale
+        interval = (x - l) / delta
+        interval = torch.clamp(interval, min=0, max=self.bit_range)
+        output = 2 * Round.apply(interval) - self.bit_range
+        return output / self.bit_range
+
     def act_quant(self, x, u, l):
         # For reducing inference time
         x = self.clipping(x, u, l)
@@ -131,14 +144,7 @@ class QILConv2d(nn.Conv2d):
         interval = interval - x_floor
         output = interval.round() + x_floor
         return output / self.bit_range
-    
-    def wgt_soft_quant(self, x, u, l):
-        delta = (u - l) / self.bit_range # delta就是scale
-        interval = (x - l) / delta
-        interval = torch.clamp(interval, min=0, max=self.bit_range)
-        output = 2 * Round.apply(interval) - self.bit_range
-        return output / self.bit_range
-    
+
     def act_soft_quant(self, x, u, l):
         delta = (u - l) / self.bit_range
         interval = (x - l) / delta
@@ -146,102 +152,104 @@ class QILConv2d(nn.Conv2d):
         output = Round.apply(interval)
         return output / self.bit_range
 
-    # 对w绝对化预处理(x则不需要)
-    def preProcess(self):
-        # bug可能存在
-        # 疑问1，不确定是否要使用可微版本的abs
-        # 疑问2，是否要保证【c和d都是正数且c>d】？
-        self.c_W.data = absol.apply(self.c_W.data)
-        self.d_W.data = absol.apply(self.d_W.data)
+#     def transformer(self, x, c_delta, d_delta, gamma, name):
+#         # bug可能存在
+#         # 疑问1，不确定是否要使用可微版本的abs
+#         # 疑问2，是否要保证【c和d都是正数且c>d】？
+#         c_delta.data = absol.apply(c_delta)
+#         d_delta.data = absol.apply(d_delta)
 
-        # 防止被零除. (出现nan, inf)
-        if self.d_W.data < 0.001:
-            self.d_W.data += 1e-4
-        if self.d_X.data < 0.001:
-            self.d_X.data += 1e-4
+#         # 防止被零除. (出现nan, inf)
+#         if d_delta.data < 0.001:
+#             d_delta.data += 1e-4
 
-        # 确保u和l都是正数
-        # bug可能存在，处理方式很重要，可能因此找不到最优
-        if self.d_W.data > self.c_W.data:
-            self.d_W.data = self.c_W.data
-        if self.d_X.data > self.c_X.data:
-            self.d_X.data = self.c_X.data
+#         if c_delta.data < 0.001:
+#             c_delta.data += 1e-4
 
+#         # 确保d_delta <= c_delta
+#         # bug可能存在，处理方式很重要，可能因此找不到最优
+#         if d_delta.data > c_delta.data:
+#             d_delta.data = c_delta.data
 
-class WgtTransformer(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, c_delta, d_delta, gamma):
-        alpha = 0.5 / d_delta
-        beta = ((- 0.5 * c_delta) / d_delta) + 0.5
+#         # test NaN, 令Transformer失效，发现不报NaN的warning了，说明FunTSF我写的有问题
+#         x = FunTSF.apply(x, c_delta, d_delta, gamma, name)
+#         # print('c_delta, d_delta is respectively: \n', self.c_delta, self.d_delta, '\n')
+#         return x
 
-        prun_point = c_delta - d_delta
-        clip_point = c_delta + d_delta
+# class FunTSF(torch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, x, c_delta, d_delta, gamma, name):
+#         alpha = 0.5 / d_delta
+#         beta = ((- 0.5 * c_delta) / d_delta) + 0.5
 
-        smaller = (x < prun_point).float()
-        bigger = (x > clip_point).float()
-        between = 1.0 - smaller - bigger  # 得到位于量化区间的index
+#         prun_point = c_delta - d_delta
+#         clip_point = c_delta + d_delta
+
+#         smaller = (x < prun_point).float()
+#         bigger = (x > clip_point).float()
+#         between = 1.0 - smaller - bigger  # 得到位于量化区间的index
+
         
-        x = (torch.pow((alpha * torch.abs(x)) + beta, gamma) * torch.sign(x)) * between
-        x = x + (torch.sign(x) * bigger)
-        ctx.save_for_backward(x, between, alpha, beta, c_delta, d_delta, gamma)
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_outputs):
-        x, between, alpha, beta, c_delta, d_delta, gamma = ctx.saved_tensors
-        grad_input = grad_c_delta = grad_d_delta = grad_gamma = name = None
-
-        # 邦哥建议： 防止零点处的梯度消失torch.sign(x)+1e-6
-        common = (gamma * (alpha * absol.apply(x) + beta) ** (gamma-1))* (torch.sign(x)) # bug可能，因为torch.sign处理求导机制不明
-        grad_input = (common * (torch.sign(x)) * alpha) * grad_outputs * between # weight 偏导数
-        grad_c_delta = (-alpha * common) * grad_outputs * between # c_delta 偏导数
-        grad_d_delta = (common * (alpha / d_delta) * (c_delta - absol.apply(x))) * grad_outputs * between # d_delta 偏导数
-        grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
-            torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
-
-        # test 统计张量中的0和1的个数，0多1少，bug可能，导致梯度消失
-        # count_zeros = torch.sum(between == 0).item()
-        # count_ones = torch.sum(between == 1).item()
-        # print("Number of zeros:", count_zeros)
-        # print("Number of ones:", count_ones)
+#         if name == 'weight':
+#             x = (torch.pow((alpha * torch.abs(x)) + beta, gamma) * torch.sign(x)) * between
+#             x = x + (torch.sign(x) * bigger)
+#             ctx.save_for_backward(x, between, alpha, beta, c_delta, d_delta, gamma, torch.Tensor([True]))
+#             return x
+            
+#         elif name == 'activation':
+#             x = (alpha * x + beta) * between
+#             x = x + bigger
+#             ctx.save_for_backward(x, between, alpha, beta, c_delta, d_delta, gamma, torch.Tensor([False]))
+#             return x
+#         else:
+#             raise NotImplementedError
         
-        # print('\n---\nwgt\ngrad_output', grad_outputs)
+#         return hat_x
+
+#     @staticmethod
+#     def backward(ctx, grad_outputs):
+#         x, between, alpha, beta, c_delta, d_delta, gamma, flag = ctx.saved_tensors
+#         grad_input = grad_c_delta = grad_d_delta = grad_gamma = name = None
+
+#         # 当输入是weight
+#         if flag == 1:
+#             # 邦哥建议： 防止零点处的梯度消失torch.sign(x)+1e-6
+#             common = (gamma * (alpha * absol.apply(x) + beta) ** (gamma-1))* (torch.sign(x)+1e-6) # bug可能，因为torch.sign处理求导机制不明
+#             grad_input = (common * (torch.sign(x)+1e-6) * alpha) * grad_outputs * between # weight 偏导数
+#             grad_c_delta = (-alpha * common) * grad_outputs * between # c_delta 偏导数
+#             grad_d_delta = (common * (alpha / d_delta) * (c_delta - absol.apply(x))) * grad_outputs * between # d_delta 偏导数
+#             grad_gamma = ((alpha * absol.apply(x) + beta) ** (gamma)) * \
+#                 torch.log(alpha * absol.apply(x) + beta) * torch.sign(x) # bug可能存在，韩国人没写γ的梯度
+
+#             # test 统计张量中的0和1的个数，0多1少，bug可能，导致梯度消失
+#             # count_zeros = torch.sum(between == 0).item()
+#             # count_ones = torch.sum(between == 1).item()
+#             # print("Number of zeros:", count_zeros)
+#             # print("Number of ones:", count_ones)
+            
+#             # print('\n---\nwgt\ngrad_output', grad_outputs)
+            
+#             # print('\n---\nwgt\ngrad_input', grad_input)
+#             # print('grad_c_delta', grad_c_delta.sum(0))
+#             # print('grad_d_delta', grad_d_delta.sum(0))
+            
+#             # 疑问，这里为什么使用.sum(0）沿着列维度求和
+#             return grad_input, grad_c_delta, grad_d_delta, None, None # test,暂时不返回grad_gamma
         
-        # print('\n---\nwgt\ngrad_input', grad_input)
-        # print('grad_c_delta', grad_c_delta.sum(0))
-        # print('grad_d_delta', grad_d_delta.sum(0))
-        
-        # 疑问，这里为什么使用.sum(0）沿着列维度求和
-        return grad_input, grad_c_delta, grad_d_delta, None, None # test,暂时不返回grad_gamma
+#         #当输入是activation
+#         elif flag == 0:
 
-class ActTransformer(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, x, c_delta, d_delta):
-        alpha = 0.5 / d_delta
-        beta = ((- 0.5 * c_delta) / d_delta) + 0.5
+#             grad_input = alpha * grad_outputs * between # x 偏导数
+#             grad_c_delta = - alpha * grad_outputs * between # c_delta 偏导数
+#             grad_d_delta = (alpha / d_delta) * (c_delta - x) * grad_outputs * between # d_delta 偏导数
 
-        prun_point = c_delta - d_delta
-        clip_point = c_delta + d_delta
-
-        smaller = (x < prun_point).float()
-        bigger = (x > clip_point).float()
-        between = 1.0 - smaller - bigger  # 得到位于量化区间的index
-
-        x = (alpha * x + beta) * between
-        x = x + bigger
-        ctx.save_for_backward(x, between, alpha, beta, c_delta, d_delta)
-        return x
-
-    @staticmethod
-    def backward(ctx, grad_outputs):
-        x, between, alpha, beta, c_delta, d_delta = ctx.saved_tensors
-        grad_input = grad_c_delta = grad_d_delta = None
-
-        grad_input = alpha * grad_outputs * between # x 偏导数
-        grad_c_delta = - alpha * grad_outputs * between # c_delta 偏导数
-        grad_d_delta = (alpha / d_delta) * (c_delta - x) * grad_outputs * between # d_delta 偏导数
-        
-        return grad_input, grad_c_delta, grad_d_delta
+#             # print('\n---\nact\ngrad_input', grad_input)
+#             # print('grad_c_delta', grad_c_delta.sum(0))
+#             # print('grad_d_delta', grad_d_delta.sum(0))
+            
+#             return grad_input, grad_c_delta, grad_d_delta, None, None
+#         else:
+#             raise NotImplementedError()
 
 # 暂时弃用
 # bug可能存在, 这里的写法不对，因为重写的backward的grad是对forward的输入来说的，
@@ -280,19 +288,19 @@ class Round(Function):
         return grad_input
 
 # 可微分版的绝对值函数
-class absol(torch.autograd.Function):
-    @staticmethod
-    def forward(ctx, input):
-        ctx.save_for_backward(input)
-        return input.abs()
+# class absol(torch.autograd.Function):
+#     @staticmethod
+#     def forward(ctx, input):
+#         ctx.save_for_backward(input)
+#         return input.abs()
 
-    def backward(ctx, grad_output):
-        input, = ctx.saved_tensors
-        grad_input = torch.sign(input)
-        grad_input = grad_input + 1
-        grad_input = ((grad_input+1e-6)/2).round()
-        grad_input = (2*grad_input) - 1
-        return grad_output * grad_input
+#     def backward(ctx, grad_output):
+#         input, = ctx.saved_tensors
+#         grad_input = torch.sign(input)
+#         grad_input = grad_input + 1
+#         grad_input = ((grad_input+1e-6)/2).round()
+#         grad_input = (2*grad_input) - 1
+#         return grad_output * grad_input
 
 # 可微分版的sign函数
 # class sgnol(torch.autograd.Function):
