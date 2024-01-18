@@ -14,8 +14,8 @@ __all__ = ['QILConv2d', "Transformer", "Round"]
 
 class QILConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
-                 bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
-                 quant=True, observer=False, learning=False, observer_step=1):
+                 bits=8, quant_wgt=True, wgt_qtype="qint", quant_act=True, act_qtype="quint",
+                 quant=True, observer_step=1):
         super(QILConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
         self.quant = quant
         self.quant_wgt = quant_wgt
@@ -30,36 +30,20 @@ class QILConv2d(nn.Conv2d):
         if self.quant_wgt:
             self.c_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.d_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
+            # self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
         if self.quant_act:
             self.c_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.d_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
         
-        self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
-        self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
-                                                   quant=quant, observer=observer, learning=learning)
-
-    def set_quant_config(self):
-        if self.step <= self.observer_step:
-            self.act_quantizer.quant = True
-            self.act_quantizer.observer = True
-            self.act_quantizer.learning = False
-
-            self.weight_quantizer.quant = True
-            self.weight_quantizer.observer = True
-            self.weight_quantizer.learning = False
-        else:
-            self.act_quantizer.quant = True
-            self.act_quantizer.observer = False
-            self.act_quantizer.learning = True
-
-            self.weight_quantizer.quant = True
-            self.weight_quantizer.observer = False
-            self.weight_quantizer.learning = True
+        self.wgt_qtype = wgt_qtype
+        self.act_qtype = act_qtype
+        self.bits = bits
+        
+        # self.act_quantizer = QILActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer = QILWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+        #                                            quant=quant, observer=observer, learning=learning)
 
     def forward(self, x):
-        self.step += 1
-        self.set_quant_config()
 
         curr_running_cW = self.c_W
         curr_running_dW = self.d_W
@@ -68,150 +52,45 @@ class QILConv2d(nn.Conv2d):
         curr_running_dX = self.d_X
         
         if self.quant and self.quant_act:
-            act = self.act_quantizer(x, curr_running_cW, curr_running_dW)
+            act = self.val_quant(x, curr_running_cW, curr_running_dW, True, 'activation', self.act_qtype)
         else:
             act = x
         if self.quant and self.quant_wgt:
-            wgt = self.weight_quantizer(self.weight, curr_running_cX, curr_running_dX)
+            wgt = self.val_quant(self.weight, curr_running_cX, curr_running_dX, False, 'weight', self.wgt_qtype)
         else:
             wgt = self.weight
 
-        if self.init == 1:
-            # scale factor initialization
-            q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-            ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-            if torch.mean(torch.abs(q_output)).data < 1e-4:
-                self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
-            else:
-                self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-            # if self.scale.data < 1e-4:
-            #     self.scale.data = torch.FloatTensor(1).uniform_(0.5, 1.0).cuda() 
-            # self.init = torch.tensor(0) # 注释掉意味着一直进行此判断分支
+        # if self.init == 1:
+        #     # scale factor initialization
+        #     q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
+        #     ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        #     if torch.mean(torch.abs(q_output)).data < 1e-4:
+        #         self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
+        #     else:
+        #         self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
+        #     # if self.scale.data < 1e-4:
+        #     #     self.scale.data = torch.FloatTensor(1).uniform_(0.5, 1.0).cuda() 
+        #     self.init = torch.tensor(0) 
         
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        output = torch.abs(self.scale) * output
-        # print('---\nscale is ', self.scale.data)
+        # output = torch.abs(self.scale) * output
         return output
-
-class QILActQuantizer(nn.Module):
-    def __init__(self, bits, gamma_fix=True, qtype="quint", quant=False, observer=False, learning=False):
-        super(QILActQuantizer, self).__init__()
-        self.bits = bits
-        self.qtype = qtype
-        self.quant = quant
-        self.observer = observer
-        self.learning = learning
-        assert self.bits != 1, "QIL don't support binary quantization"
-        assert self.qtype in ("quint"), "qil act qtype just support quint"
-        if self.qtype == "quint":
-            # unsigned activation is quantized to [0, 2^b-1]
-            self.quant_level = 2 ** bits - 1
+    
+    def val_quant(self, x, c_delta, d_delta, gamma_fix, name, qtype):
+        if qtype == "quint":
+            quant_level = 2 ** self.bits - 1
         else:
-            # signed activation is quantized to [-2^(b-1), 2^(b-1)-1]
-            self.quant_level = 2 ** (self.bits - 1) - 1
-        self.observer_init = torch.tensor(1, dtype=torch.int8)
-        self.transformer = Transformer('activation', gamma_fix)
-        
-
-    def forward(self, x, c_delta, d_delta):
-        if not self.quant:
-            return x
-        # if self.observer:
-        #     if self.observer_init == 1:
-        #         self.tmp_max = torch.max(torch.abs(x))
-        #         self.tmp_min = torch.min(torch.abs(x))
-        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
-                
-        #         self.observer_init = 0
-        #     else:
-        #         x_max = torch.max(torch.abs(x))
-        #         x_min = torch.min(torch.abs(x))
-        #         if x_max > self.tmp_max:
-        #             self.tmp_max = torch.clone(x_max)
-        #         if x_min < self.tmp_min:
-        #             self.tmp_min = torch.clone(x_min)
-        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
-                
-        if self.observer or self.learning:
-            transform_x = self.transformer(x, c_delta, d_delta)
-            # x = Discretizer.apply(transform_x, self.quant_level)
-            x = Round.apply(transform_x * self.quant_level) / self.quant_level
-        # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
-        return x
-
-
-class QILWeightQuantizer(nn.Module):
-    def __init__(self, bits, gamma_fix=False, qtype="qint", per_channel=False, quant=False, observer=False, learning=False):
-        super(QILWeightQuantizer, self).__init__()
-        self.bits = bits
-        self.step = 0
-        self.qtype = qtype
-        self.quant = quant
-        self.observer = observer
-        self.learning = learning
-        self.tmp_max = 0.0
-        self.tmp_min = 0.0
-        assert self.bits != 1, "QIL don't support binary quantization"
-        assert self.qtype in ("qint", "quint"), "qil weight qtype just support qint or quint"
-        if self.qtype == "quint":
-            # unsigned weight is quantized to [0, 2^b-1]
-            self.quant_level = 2 ** bits - 1
-        else:
-            # signed weight is quantized to [-2^(b-1), 2^(b-1)-1]
-            self.quant_level = 2 ** (bits - 1) - 1
-        self.per_channel = per_channel
-        self.observer_init = torch.tensor(1, dtype=torch.int8)
-        self.transformer = Transformer('weight', gamma_fix)
-
-    def forward(self, x, c_delta, d_delta):
-        self.step += 1
-        if not self.quant:
-            return x
-        assert self.per_channel != True, "QIL don't support per_channel quant"
-        # 没想好如何动态调整c_delta和d_delta
-        # if self.observer:
-        #     if self.observer_init == 1:
-        #         self.tmp_max = torch.max(torch.abs(x))
-        #         self.tmp_min = torch.min(torch.abs(x))
-        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
-                
-        #         self.observer_init = 0
-        #     else:
-        #         x_max = torch.max(torch.abs(x))
-        #         x_min = torch.min(torch.abs(x))
-        #         if x_max > self.tmp_max:
-        #             self.tmp_max = torch.clone(x_max)
-        #         if x_min < self.tmp_min:
-        #             self.tmp_min = torch.clone(x_min)
-        #         c_delta.data = (torch.tensor((self.tmp_max+self.tmp_min)/2).cuda())
-        #         d_delta.data = (torch.tensor((self.tmp_max-self.tmp_min)/2).cuda())
-                
-        if self.observer or self.learning:
-            transform_x = self.transformer(x, c_delta, d_delta)
-            # x = Discretizer.apply(transform_x, self.quant_level)
-            x = Round.apply(transform_x * self.quant_level) / self.quant_level
-        # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
-        return x
-
-class Transformer(nn.Module):
-    def __init__(self, name, gamma_fix=True):
-        super(Transformer, self).__init__()
-
-        self.name = name
-
-        """ Transformer Parameter """
+            quant_level = 2 ** (self.bits - 1) - 1
         if not gamma_fix:
-            # bug 可能存在
-            # self.gamma = torch.tensor([1.0]).to(device)
-            self.gamma = torch.tensor([1.0]).cuda()
-            # self.gamma = nn.Parameter(torch.tensor([1.0]).cuda())
+            gamma = torch.tensor([1.0]).cuda()
         else:
-            self.gamma = None
+            gamma = None
+            
+        transform_x = self.transformer(x, c_delta, d_delta, gamma, name)
+        x = Round.apply(transform_x * quant_level) / quant_level
+        return x
 
-    def forward(self, x, c_delta, d_delta):
+    def transformer(self, x, c_delta, d_delta, gamma, name):
         # 疑问1，不确定是否要使用可微版本的abs
         # 疑问2，是否要保证【c和d都是正数且c>d】？
         c_delta.data = absol.apply(c_delta)
@@ -230,7 +109,7 @@ class Transformer(nn.Module):
             d_delta.data = c_delta.data
 
         # test NaN, 令Transformer失效，发现不报NaN的warning了，说明FunTSF我写的有问题
-        x = FunTSF.apply(x, c_delta, d_delta, self.gamma, self.name)
+        x = FunTSF.apply(x, c_delta, d_delta, gamma, name)
         # print('c_delta, d_delta is respectively: \n', self.c_delta, self.d_delta, '\n')
         return x
 
@@ -271,11 +150,7 @@ class FunTSF(torch.autograd.Function):
 
         # 当输入是weight
         if flag == 1:
-            # grad_abs = torch.sign(x)
-            # grad_abs = grad_abs + 1
-            # grad_abs = ((grad_abs+1e-6)/2).round()
-            # grad_abs = (2*grad_abs) - 1
-            # 公共导数
+            # 邦哥建议： 防止零点处的梯度消失torch.sign(x)+1e-6
             common = (gamma * (alpha * absol.apply(x) + beta) ** (gamma-1))* (torch.sign(x)+1e-6) # bug可能，因为torch.sign处理求导机制不明
             grad_input = (common * (torch.sign(x)+1e-6) * alpha) * grad_outputs * between # weight 偏导数
             grad_c_delta = (-alpha * common) * grad_outputs * between # c_delta 偏导数

@@ -183,7 +183,9 @@ def qparam_extract(model, logger):
         if len(model._modules[m]._modules) > 0:
             var = var + qparam_extract(model._modules[m], logger)
         else:
+            print('model._modules[m] is ', model._modules[m], hasattr(model._modules[m], 'init'))
             if hasattr(model._modules[m], 'init'):
+                print('inside init!!!')
                 # print("qparam: ", list(model._modules[m].parameters())[1:])
                 var = var + list(model._modules[m].parameters())[1:]
                 logger.write('---q_ext ' + str(test_idx) + '\n' + str(model._modules[m]) + '\n')
@@ -222,6 +224,7 @@ def run(config):
     global device
     global test_idx
     model = get_model(config).to(device)
+    print(model)
     print("The number of parameters : %d" % count_parameters(model))
     criterion = get_loss(config)
 

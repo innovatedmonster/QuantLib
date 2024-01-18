@@ -51,7 +51,7 @@ class DAQConv2d(nn.Conv2d):
             self.uW = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.lW = nn.Parameter(data=torch.tensor((-1) * (2**32)).float().cuda())
             #beta的作用是反缩放weight， 缩放反缩放的原因可能是为了训练好收敛
-            self.beta = nn.Parameter(data=torch.tensor(0.2).float().cuda()) 
+            # self.beta = nn.Parameter(data=torch.tensor(0.2).float().cuda()) 
 
         # Activation input
         if self.quant_act:
@@ -176,16 +176,16 @@ class DAQConv2d(nn.Conv2d):
         else:
             activation = x
 
-        if self.init == 1:
-            # scale factor initialization
-            q_output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-            ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # if self.init == 1:
+        #     # scale factor initialization
+        #     q_output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
+        #     ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
 
-            self.beta.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-            self.init = torch.tensor(0)
+        #     self.beta.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
+        #     self.init = torch.tensor(0)
 
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-        output = torch.abs(self.beta) * output
+        # output = torch.abs(self.beta) * output
         # print('daq beta is ', self.beta.data) #不知为什么，无法print, 因为根本没运行到这里
         
         return output
