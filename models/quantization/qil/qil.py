@@ -40,27 +40,25 @@ class QILConv2d(nn.Conv2d):
         # self.act_qtype = act_qtype
         self.bits = bits
         self.bit_range = 2**self.bits - 1
+        self.bit_range_half = 2**(self.bits-1) - 1
         
     def forward(self, x):
         # daq的初始化分别是[-3.0, 3.0], [0, x.std()*3], 那qil呢？
         if self.init:
             if self.quant_wgt:
-                # self.c_W.data = torch.tensor(1.5).cuda()
-                # self.d_W.data = torch.tensor(1.5).cuda()
-                self.c_W.data = torch.tensor(0.0).cuda()
-                self.d_W.data = torch.tensor(3.0).cuda()
+                self.c_W.data = torch.tensor(1.5).cuda()
+                self.d_W.data = torch.tensor(1.5).cuda()
             if self.quant_act:
                 self.c_X.data = x.std() * 3 / 2
                 self.d_X.data = x.std() * 3 / 2
         
         # bug可能存在，daq分别是[lw, uw], [0, ua], 那qil呢？
-        # self.preProcess()
+        self.preProcess()
         curr_running_uw = self.c_W + self.d_W
         curr_running_lw = self.c_W - self.d_W
 
         curr_running_ua = self.c_X + self.d_X
-        # curr_running_la = self.c_X - self.d_X
-        curr_running_la = 0
+        curr_running_la = self.c_X - self.d_X
         
         # Weight normalization
         mean = self.weight.data.mean().cuda()
@@ -70,9 +68,9 @@ class QILConv2d(nn.Conv2d):
         # Weight quantization
         if self.quant_wgt:
             if self.training:
-                weight = self.wgt_soft_quant(norm_weight, curr_running_uw, curr_running_lw)
+                weight = self.wgt_soft_quant(norm_weight, curr_running_uw, curr_running_lw, gamma=torch.tensor([1.0]).cuda())
             else:
-                weight = self.wgt_quant(norm_weight, curr_running_uw, curr_running_lw)
+                weight = self.wgt_quant(norm_weight, curr_running_uw, curr_running_lw, gamma=torch.tensor([1.0]).cuda())
         else:
             weight = self.weight
 
@@ -106,20 +104,35 @@ class QILConv2d(nn.Conv2d):
         # bigger = (x > upper).float()
         # between = 1.0 - smaller - bigger  # 得到位于量化区间的index
         # x = x * between + upper * bigger + lower * smaller
-        
         x = x + F.relu(lower - x)
         x = x - F.relu(x - upper)
         
         return x
+    
+    # added, 未知影响
+    def wgt_soft_quant(self, x, u, l, gamma):
+        # delta = (u - l) / self.bit_range # delta就是scale
+        # interval = (x - l) / delta
+        interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * torch.sign(x) * self.bit_range_half
+        interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range)
+        output = 2 * Round.apply(interval) - self.bit_range
+        return output / self.bit_range
 
-    def wgt_quant(self, x, u, l):
+    def wgt_quant(self, x, u, l, gamma):
         # For reducing inference time
-        x = self.clipping(x, u, l)
-        delta = (u - l) / self.bit_range
-        interval = (x - l) / delta
+        sgn_x = torch.sign(x)
+        x = self.clipping(absol.apply(x), u, l)
+        interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * sgn_x * self.bit_range_half
         x_floor = interval.floor()
         interval = interval - x_floor
-        output = 2*(interval.round() + x_floor) - self.bit_range
+        output = 2*((interval.round()+self.bit_range_half)  + x_floor) - self.bit_range
+        return output / self.bit_range
+
+    def act_soft_quant(self, x, u, l):
+        delta = (u - l) / self.bit_range
+        interval = (x - l) / delta
+        interval = torch.clamp(interval, min=0, max=self.bit_range)
+        output = Round.apply(interval)
         return output / self.bit_range
 
     def act_quant(self, x, u, l):
@@ -131,22 +144,8 @@ class QILConv2d(nn.Conv2d):
         interval = interval - x_floor
         output = interval.round() + x_floor
         return output / self.bit_range
-    
-    def wgt_soft_quant(self, x, u, l):
-        delta = (u - l) / self.bit_range # delta就是scale
-        interval = (x - l) / delta
-        interval = torch.clamp(interval, min=0, max=self.bit_range)
-        output = 2 * Round.apply(interval) - self.bit_range
-        return output / self.bit_range
-    
-    def act_soft_quant(self, x, u, l):
-        delta = (u - l) / self.bit_range
-        interval = (x - l) / delta
-        interval = torch.clamp(interval, min=0, max=self.bit_range)
-        output = Round.apply(interval)
-        return output / self.bit_range
 
-    # 对w绝对化预处理(x则不需要)
+    # 对w绝对化预处理, added, 未知影响
     def preProcess(self):
         # bug可能存在
         # 疑问1，不确定是否要使用可微版本的abs
