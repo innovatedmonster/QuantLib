@@ -16,13 +16,15 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 
 [关于环境的坑](http://t.csdnimg.cn/O3k6Y) 
 > 各种坑 
->> **DAQ部分代码写死了，只支持n bit**  
->> **DAQ就是在LSQ基础上的，也就是说DAQ本身就是改版rounding和LSQ的联合**
->> DAQ没有使用self.beta时，acc91->acc88
+>> **DAQ部分代码写死了，只支持n bit**
+>> <br/>**DAQ就是在LSQ基础上的，也就是说DAQ本身就是改版rounding和LSQ的联合**
+>> <br/>DAQ没有使用self.beta时，acc91->acc88
+>
 >> QIL论文在实现时，必须**先量化后clamp**，如果先clamp后量化效果会很差，暂时不知道为什么
 
 > 已经做的工作：
 >> 最新版本是QEALSQ分支，LSQ部分修复了scale和其梯度形状不对应的bug, DAQ部分增加了关键注释和修复了resnet20_daq_W1A32.yml的路径bug
+>
 >> 实现了QIL, withScale(缩放因子，用来恢复量化反量化后conv输出的表达范围,[-1,1]->[min, max])的情况下,
 使用cifar10数据集, 经测试能达到acc88.51，87.86，88.62，87.76，88.38，88.35
 
