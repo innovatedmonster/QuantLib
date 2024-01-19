@@ -30,7 +30,7 @@ class QILConv2d(nn.Conv2d):
         if self.quant_wgt:
             self.c_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.d_W = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
-            # self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
+            self.scale = nn.Parameter(data=torch.tensor(0.2).float().cuda())# scale，还原conv的数值范围
         if self.quant_act:
             self.c_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
             self.d_X = nn.Parameter(data=torch.tensor(2**31 - 1).float().cuda())
@@ -83,20 +83,20 @@ class QILConv2d(nn.Conv2d):
         else:
             activation = x
 
-        # if self.init == 1:
-        #     # scale factor initialization
-        #     q_output = F.conv2d(act, wgt, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-        #     ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        #     if torch.mean(torch.abs(q_output)).data < 1e-4:
-        #         self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
-        #     else:
-        #         self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
-        #     # if self.scale.data < 1e-4:
-        #     #     self.scale.data = torch.FloatTensor(1).uniform_(0.5, 1.0).cuda() 
-        #     self.init = torch.tensor(0) 
+        if self.init == 1:
+            # scale factor initialization
+            q_output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
+            ori_output = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+            if torch.mean(torch.abs(q_output)).data < 1e-4:
+                self.scale.data = torch.mean(torch.abs(ori_output)) / 0.1
+            else:
+                self.scale.data = torch.mean(torch.abs(ori_output)) / torch.mean(torch.abs(q_output)) # beta就是s3?
+            # if self.scale.data < 1e-4:
+            #     self.scale.data = torch.FloatTensor(1).uniform_(0.5, 1.0).cuda() 
+            self.init = torch.tensor(0) 
         
         output = F.conv2d(activation, weight, self.bias,  self.stride, self.padding, self.dilation, self.groups)
-        # output = torch.abs(self.scale) * output
+        output = torch.abs(self.scale) * output
         return output
     
     def clipping(self, x, upper, lower):
