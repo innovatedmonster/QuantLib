@@ -14,7 +14,7 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 * Python == 3.7
 * PyTorch == 1.8.2(我用的PyTorch==1.12.0+cu116)
 
-[关于环境的坑](http://t.csdnimg.cn/O3k6Y) 
+[关于环境的坑](https://blog.csdn.net/Acemanindisguise/article/details/134851789?spm=1001.2014.3001.5501) 
 > 各种坑 
 >> **DAQ部分代码写死了，只支持n bit**
 >> <br/>**DAQ就是在LSQ基础上的，也就是说DAQ本身就是改版rounding和LSQ的联合**
