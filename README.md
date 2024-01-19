@@ -25,7 +25,7 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 > 已经做的工作：
 >> 最新版本是QEALSQ分支，LSQ部分修复了scale和其梯度形状不对应的bug, DAQ部分增加了关键注释和修复了resnet20_daq_W1A32.yml的路径bug
 >
->> 实现了QIL, withScale(缩放因子，用来恢复量化反量化后conv输出的表达范围,[-1, 1]->[min, max])的情况下,
+>> 实现了QIL, withoutScale(缩放因子，用来恢复量化反量化后conv输出的表达范围,[-1, 1]->[min, max])的情况下,
 使用cifar10数据集, 经测试能达到acc88.51，87.86，88.62，87.76，88.38，88.35
 
 
