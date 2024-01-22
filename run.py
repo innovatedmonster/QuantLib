@@ -1,7 +1,7 @@
 import argparse
 
 from utils.config import load
-from tools import cifar10_train, cifar10_train_daq, cifar10_train_qil
+from tools import cifar10_train, cifar10_train_daq, cifar10_train_qil, cifar10_train_qil_plus
 import os
 os.environ['CUDA_VISIBLE_DEVICES'] = '0'
 
