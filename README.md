@@ -27,7 +27,8 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 >
 >> 实现了QIL, withoutScale(缩放因子scale，用来恢复量化反量化后conv输出的表达范围,[-1, 1]->[min, max])的情况下,使用cifar10数据集, w8a8量化， 经测试能达到acc88.51，87.86，88.62，87.76，88.38，88.35;
 <br/>withScale(缩放因子scale，用来恢复量化反量化后conv输出的表达范围,[-1, 1]->[min, max])的情况下,使用cifar10数据集, w8a8量化， 经测试能达到acc91.42, 91.35,  91.32, 91.53, 90.79
-
+>
+>>实现了QILPlus,即QIL+DASR,withScale_cifar10_w8a8_epoch400_acc91.20, 91.01,  91.38,  90.75, 91.31, 91.40, 90.95
 
 ### Installation
 * Clone github repository.
