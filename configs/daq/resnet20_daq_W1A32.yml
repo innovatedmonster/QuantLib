@@ -15,7 +15,7 @@ model:
     dir: './models/cifar10_fp.pth'
   quant_func: "DAQConv2d"
   quant_params:
-    bits: 8 # 1->8
+    bits: 4 # 1->8->4
     wgt_sigma: 1
     wgt_temp: 2
     act_sigma: 2
