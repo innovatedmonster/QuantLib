@@ -30,6 +30,14 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 >
 >>实现了QILPlus,即QIL+DASR,withScale_cifar10_w8a8_epoch400_acc91.20, 91.01,  91.38,  90.75, 91.31, 91.40, 90.95
 
+> 测试
+>>关于cifar10_4bit量化：
+>>>lsq，acc86.16 86.06
+<br/>daq, acc91.27 91.21
+>>
+>>>qil，acc89.80, 88.28
+<br/>qil_plus, acc89.85, 90.06
+
 ### Installation
 * Clone github repository.
 ```bash
