@@ -15,7 +15,7 @@ model:
     dir: './models/cifar10_fp.pth'
   quant_func: "QILConv2d"
   quant_params:
-    bits: 3
+    bits: 4
     quant_wgt: True
     wgt_qtype: "qint"
     quant_act: True

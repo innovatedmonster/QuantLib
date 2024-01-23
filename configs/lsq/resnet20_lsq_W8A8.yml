@@ -15,7 +15,7 @@ model:
     dir: './models/cifar10_fp.pth'
   quant_func: "LSQConv2d"
   quant_params:
-    bits: 4
+    bits: 3
     quant_wgt: True
     wgt_qtype: "qint"
     wgt_per_channel: False
