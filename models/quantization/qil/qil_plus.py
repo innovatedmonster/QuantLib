@@ -116,8 +116,6 @@ class QILPlusConv2d(nn.Conv2d):
         # delta = (u - l) / self.bit_range # delta就是scale
         # interval = (x - l) / delta
         interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * torch.sign(x) * self.bit_range_half
-        smaller = (x < 0).float()
-        interval = interval - smaller
         interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range)
         output = 2 * self.soft_argmax(interval, self.wgt_temp, self.wgt_sigma) - self.bit_range
         return output / self.bit_range
