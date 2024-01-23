@@ -114,8 +114,8 @@ class QILConv2d(nn.Conv2d):
         # delta = (u - l) / self.bit_range # delta就是scale
         # interval = (x - l) / delta
         interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * torch.sign(x) * self.bit_range_half
-        interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit
-        interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range)
+        # interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit
+        interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range) # fixed, plus 1
         output = 2 * Round.apply(interval) - self.bit_range
         return output / self.bit_range
 
@@ -124,10 +124,10 @@ class QILConv2d(nn.Conv2d):
         sgn_x = torch.sign(x)
         x = self.clipping(absol.apply(x), u, l)
         interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * sgn_x * self.bit_range_half
+        # interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit
         x_floor = interval.floor()
         interval = interval - x_floor
-        interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit
-        output = 2*((interval.round()+self.bit_range_half)  + x_floor) - self.bit_range
+        output = 2*((interval.round()+self.bit_range_half)  + x_floor) - self.bit_range # fixed, plus 1
         return output / self.bit_range
 
     def act_soft_quant(self, x, u, l):
