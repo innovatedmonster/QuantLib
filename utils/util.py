@@ -11,6 +11,7 @@ import random
 
 from torchvision.transforms import *
 import torch
+import matplotlib.pyplot as plt
 
 def prepare_train_directories(config, model_type):
     out_dir = config.train[model_type + '_dir']
@@ -108,3 +109,21 @@ class RandomResized(object):
 # added, test enter
 def printLocation(location):
     print('entered ' + location)
+
+# added, plot and record
+def plotAndRecord(num_epochs, accuracies, pngName, logger):
+    # 画出准确率折线图
+    plt.plot(range(0, num_epochs+1), accuracies, label='Accuracy')
+    plt.xlabel('Epoch')
+    plt.ylabel('Accuracy')
+    # plt.legend()
+    plt.title('Accuracy per Epoch')
+    plt.grid(True)
+
+    # 保存成图片
+    plt.savefig(pngName)
+    plt.show()
+    
+    # 记录到log中
+    logger.write('epoch' + str(num_epochs) + ':\tacc' + str(accuracies[num_epochs]) + '\n')
+    logger.flush()

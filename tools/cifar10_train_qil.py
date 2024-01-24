@@ -15,6 +15,7 @@ from utils.metrics import AverageMeter
 import utils.config
 import utils.checkpoint
 from utils.util import Logger
+from utils.util import plotAndRecord
 
 # path
 path_log = './log4test/'
@@ -151,8 +152,10 @@ def train(config, model, dataloaders, criterion, optimizer, q_optimizer, schedul
                     'test/accuracy': 0.0,
                     'test/loss': 0.0}
 
+    accuracies = []
+    pngName = 'log4test/plot/'+str(config.model.quant_params.bits)+'b_'+config.model.quant_func+'_acc'
+    logger_record = Logger(pngName+'.log')
     best_accuracy = 0.0
-
     for epoch in range(start_epoch, num_epochs):
         # train phase
         train_single_epoch(model, dataloaders['train'], criterion, optimizer, q_optimizer,
@@ -170,6 +173,9 @@ def train(config, model, dataloaders, criterion, optimizer, q_optimizer, schedul
         if epoch % config.train.save_model_frequency == 0:
             utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler, q_optimizer,
                                              q_scheduler, None, None, epoch, 0, 'model')
+        # plot and record acc
+        accuracies.append(top1)
+        plotAndRecord(epoch, accuracies, pngName+'.png', logger_record)
 
     utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler, q_optimizer,
                                      q_scheduler, None, None, epoch, 0, 'model')

@@ -38,6 +38,9 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 >>>qil，acc89.80, 88.28
 <br/>qil_plus, acc89.85, 90.06
 
+>>关于cifar10_3bit量化：
+>>>daq，acc90.62, 90.41
+
 ### Installation
 * Clone github repository.
 ```bash
