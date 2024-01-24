@@ -16,11 +16,14 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 
 [关于环境的坑](https://blog.csdn.net/Acemanindisguise/article/details/134851789?spm=1001.2014.3001.5501) 
 > 各种坑 
->> **DAQ部分代码写死了，只支持n bit**
->> <br/>**DAQ就是在LSQ基础上的，也就是说DAQ本身就是改版rounding和LSQ的联合**
->> <br/>DAQ没有使用self.beta时，acc91->acc88
+>>关于DAQ:
+>> + **DAQ部分代码写死了，只支持n bit**
+>> + **DAQ就是在LSQ基础上的，也就是说DAQ本身就是改版rounding和LSQ的联合**
+>> + DAQ没有使用self.beta时，acc91->acc88
 >
->> QIL论文在实现时，必须**先量化后clamp**，如果先clamp后量化效果会很差，暂时不知道为什么
+>>关于QIL:
+>> + QIL论文在实现时，必须**先量化后clamp**，如果先clamp后量化效果会很差，暂时不知道为什么
+>> + 3b开始acc_qil骤降，daq和qil对wgt处理的区别是，qil是少了1个数的表示范围, daq是$[-2^{b-1}, 2^{b-1}-1]$而qil是$[-2^{b-1}, 2^{b-1}]$(都是对称量化，最终有符号)。
 
 > 已经做的工作：
 >> 最新版本是QEALSQ分支，LSQ部分修复了scale和其梯度形状不对应的bug, DAQ部分增加了关键注释和修复了resnet20_daq_W1A32.yml的路径bug
@@ -39,7 +42,7 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 <br/>qil_plus, acc89.85, 90.06
 
 >>关于cifar10_3bit量化：
->>>daq，acc90.62, 90.41
+>>>daq，acc90.62, 90.41, 90.06, 90.65, 90.47, 90.61, 89.91, 90.34
 
 ### Installation
 * Clone github repository.
