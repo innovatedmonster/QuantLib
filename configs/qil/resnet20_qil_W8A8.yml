@@ -15,7 +15,7 @@ model:
     dir: './models/cifar10_fp.pth'
   quant_func: "QILConv2d"
   quant_params:
-    bits: 8 # 3b开始acc骤降，原因不明
+    bits: 4 # 3b开始acc骤降，原因不明
     quant_wgt: True
     wgt_qtype: "qint"
     quant_act: True
