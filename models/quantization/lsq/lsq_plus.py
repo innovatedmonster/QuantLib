@@ -7,7 +7,8 @@ from torch.autograd import Function
 from .lsq import Round
 from .lsq import FunLSQ as WLSQPlus
 
-
+# 压根没实现非对称量化的quint!
+# 对wgt是使用lsq, 对act使用lsq_plus
 class ALSQPlus(Function):
     @staticmethod
     def forward(ctx, weight, alpha, g, Qn, Qp, beta):

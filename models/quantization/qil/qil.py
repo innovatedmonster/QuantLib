@@ -111,23 +111,31 @@ class QILConv2d(nn.Conv2d):
     
     # added, 未知影响
     def wgt_soft_quant(self, x, u, l, gamma):
-        # delta = (u - l) / self.bit_range # delta就是scale
-        # interval = (x - l) / delta
-        interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * torch.sign(x) * self.bit_range_half
-        # interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit, but bug
-        interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range) # fixed, plus 1
-        output = 2 * Round.apply(interval) - self.bit_range
+        # interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * torch.sign(x) * self.bit_range_half
+        # interval = torch.clamp(interval+self.bit_range_half, min=0, max=self.bit_range)
+        # output = 2 * Round.apply(interval) - self.bit_range
+        # return output / self.bit_range
+        interval = torch.pow((x - l*torch.sign(x)) / (2*(u - l)), gamma)  * self.bit_range
+        interval = torch.clamp(interval, min=-self.bit_range_half-1, max=self.bit_range)
+        output = Round.apply(interval)
         return output / self.bit_range
 
     def wgt_quant(self, x, u, l, gamma):
         # For reducing inference time
-        sgn_x = torch.sign(x)
-        x = self.clipping(absol.apply(x), u, l)
-        interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * sgn_x * self.bit_range_half
-        # interval = interval + 1/2 * torch.sign(x) * (1 - torch.sign(x)) # added, to fix low bit, but bug
+        # sgn_x = torch.sign(x)
+        # x = self.clipping(absol.apply(x), u, l)
+        # interval = torch.pow((absol.apply(x) - l) / (u - l), gamma) * sgn_x * self.bit_range_half
+        # x_floor = interval.floor()
+        # interval = interval - x_floor
+        # output = 2*((interval.round()+self.bit_range_half)  + x_floor) - self.bit_range
+        # return output / self.bit_range
+        minus = (x <= 0).float()
+        positive = (x > 0).float()
+        x = self.clipping(x.clone()*positive, u, l) + self.clipping(x.clone()*minus, -l, -u)
+        interval = torch.pow((x - l*torch.sign(x)) / (2*(u - l)), gamma)  * self.bit_range
         x_floor = interval.floor()
         interval = interval - x_floor
-        output = 2*((interval.round()+self.bit_range_half)  + x_floor) - self.bit_range # fixed, plus 1
+        output = interval.round()  + x_floor
         return output / self.bit_range
 
     def act_soft_quant(self, x, u, l):
