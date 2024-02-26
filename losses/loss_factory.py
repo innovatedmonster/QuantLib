@@ -71,6 +71,31 @@ def cross_entropy(reduction='mean', **_):
 
     return {'train': loss_fn, 'val': cross_entropy_fn}
 
+#added, for bit prune
+def cross_entropy_penelty(reduction='mean', **_):
+    cross_entropy_fn = torch.nn.CrossEntropyLoss(reduction=reduction)
+
+    def loss_fn(outputs, labels, model, gamma=1.0, **_):
+        loss_dict = dict()
+        gt_loss = cross_entropy_fn(outputs, labels) + gamma * bits_extract(model)
+        loss_dict['loss'] = gt_loss
+        loss_dict['gt_loss'] = gt_loss
+        return loss_dict
+    
+    from models.quantization.bit_prune.bit_prune import LSQActQuantizer, LSQWeightQuantizer, BPConv2d
+    def bits_extract(model):
+        var = 0
+        for m in model._modules:
+            if len(model._modules[m]._modules) > 0:
+                var = var + bits_extract(model._modules[m])
+            else:
+                if isinstance(model._modules[m], BPConv2d):
+                    print("type", type(model._modules[m]))
+                if hasattr(model._modules[m], "alpha_bit"):
+                    var = var + model._modules[m].bits
+        return var
+
+    return {'train': loss_fn, 'val': cross_entropy_fn}
 
 def regularization(reduction='mean', **_):
     cross_entropy_fn = torch.nn.CrossEntropyLoss(reduction=reduction)
