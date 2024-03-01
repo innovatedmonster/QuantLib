@@ -82,9 +82,10 @@ def cross_entropy_penelty(reduction='mean', **_):
         loss_dict['gt_loss'] = gt_loss
         return loss_dict
     
-    from models.quantization.bit_prune.bit_prune import LSQActQuantizer, LSQWeightQuantizer, BPConv2d
+    from models.quantization.bit_prune.bit_prune import BPConv2d
     def bits_extract(model):
-        var = 0
+        # var = 0
+        var = torch.nn.Parameter(torch.zeros(1), requires_grad=True).cuda()
         for m in model._modules:
             if len(model._modules[m]._modules) > 0:
                 var = var + bits_extract(model._modules[m])
@@ -92,7 +93,10 @@ def cross_entropy_penelty(reduction='mean', **_):
                 if isinstance(model._modules[m], BPConv2d):
                     print("type", type(model._modules[m]))
                 if hasattr(model._modules[m], "alpha_bit"):
-                    var = var + model._modules[m].bits
+                    # 感觉不应该是不可导的bits，而应该是可导的alpha_bit，类比l2正则项(不对，bits也需要)
+                    # 感觉还需要正则化，但如何做呢？
+                    # var = var + model._modules[m].bits
+                    var = var + model._modules[m].alpha_bit + model._modules[m].bits
         return var
 
     return {'train': loss_fn, 'val': cross_entropy_fn}

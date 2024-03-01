@@ -44,12 +44,32 @@ QuantLib is an open source quantization toolbox based on PyTorch.
 >>关于cifar10_3bit量化：
 >>>daq，acc90.62, 90.41, 90.06, 90.65, 90.47, 90.61, 89.91, 90.34
 
+>>关于bit_prune量化：
+>>>init_8bit，acc84.63_bit5.07, acc84.67_bit5.07
+
 ### Installation
 * Clone github repository.
 ```bash
-$ git clone git@github.com:iimmortall/QuantLib.git
+$ git clone https://github.com/innovatedmonster/QuantLib.git
 ```
 * Install dependencies
+<br/>nvidia-smi命令确认cuda版本是11.6后创建环境
+```bash
+$ conda create -n quantlib python=3.7
+```
+
+```bash
+$ pip install torch==1.12.0+cu116 torchvision==0.13.0+cu116 torchaudio==0.12.0 torchtext==0.13.0 --extra-index-url https://download.pytorch.org/whl/cu116
+```
+
+```bash
+$ pip install --upgrade setuptools==57.5.0
+```
+
+```bash
+$ pip install apex
+```
+
 ```bash
 $ pip install -r requirements.txt
 ```
@@ -103,3 +123,4 @@ This project is released under the [MIT license](LICENSE).
 ### References
 * https://github.com/ZouJiu1/LSQplus
 * https://github.com/cvlab-yonsei/DAQ
+* https://github.com/iimmortall/QuantLib

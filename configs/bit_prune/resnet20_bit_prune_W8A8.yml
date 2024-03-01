@@ -24,7 +24,7 @@ model:
     quant: True
     observer: True
     learning: True
-    observer_step: 1960  # 10 epoch
+    observer_step: 1960  # 1960 = 10 epoch
 
 train:
   dir: "./output"
@@ -45,7 +45,7 @@ scheduler:
 optimizer:
   name: adam
   params:
-    lr: 0.0001
+    lr: 0.0001 # origin is 0.0001
     weight_decay: 0.0
 
 loss:

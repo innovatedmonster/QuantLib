@@ -127,3 +127,15 @@ def plotAndRecord(num_epochs, accuracies, pngName, logger):
     # 记录到log中
     logger.write('epoch' + str(num_epochs) + ':\tacc' + str(accuracies[num_epochs]) + '\n')
     logger.flush()
+
+# added, log alpha and bits
+def bits_log(model, logger):
+    for m in model._modules:
+        if len(model._modules[m]._modules) > 0:
+            bits_log(model._modules[m], logger)
+        else:
+            if hasattr(model._modules[m], "alpha_bit"):
+                logger.write('alpha and bit are ' + \
+                             str(model._modules[m].alpha_bit[0]) + ' ' + str(model._modules[m].bits) + '\n')
+                logger.flush()
+    return

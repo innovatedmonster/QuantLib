@@ -15,14 +15,17 @@ from utils.metrics import AverageMeter
 import utils.config
 import utils.checkpoint
 from utils.util import Logger
-from utils.util import plotAndRecord
+from utils.util import plotAndRecord, bits_log
 
 # path
-path_log = '/mnt/newssd/lfh/NAS+quantization/Quantlib/QuantLib/log4test/'
+path_log = '/home/NAS+quantization/QuantLib/log4test/'
 path_log_opt_param = os.path.join(path_log, 'optimizer_param.log')
+path_log_bit_param = os.path.join(path_log, 'alpha_bit_init6.log')
+
 
 # logger for test
-# logger_opt_param = Logger(path_log_opt_param)
+logger_opt_param = Logger(path_log_opt_param)
+logger_alpha_bit = Logger(path_log_bit_param)
 
 device = None
 
@@ -38,6 +41,9 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
         imgs = imgs.to(device)
         labels = labels.to(device)
         optimizer.zero_grad()
+
+        #test alpha and bit
+        # bits_log(model, logger_alpha_bit)
 
         pred_dict = model(imgs)
         loss = criterion['train'](pred_dict['out'], labels, model)
@@ -157,9 +163,9 @@ def run(config):
     criterion = get_loss(config)
 
     # test model.param
-    # for name, param in model.named_parameters():
-    #     logger_opt_param.write(name + '\n')
-    # logger_opt_param.flush()
+    for name, param in model.named_parameters():
+        logger_opt_param.write(name + '\n')
+    logger_opt_param.flush()
     # test model.param
     
     optimizer = get_optimizer(config, model.parameters())
