@@ -1,6 +1,19 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# 本来打算直接使用朴素量化，即plain scale的计算方式，但如果bit不可导，
+#bit也无法在loss函数中非惩罚项部分起到优化作用，即无法梯度更新，而仅仅在惩罚项中进行梯度更新(这导致什么问题？)
+
+# 这将导致bit只会不断减小，而不收敛。
+#观察loss的权重衰减，设损失函数是$C=C_0+\frac{\lambda}{2n}\sum_ww^2$
+#则关于w的导数是$\frac{\partial C}{\partial w}=\frac{\partial C_0}{\partial w}+\frac{\lambda}{n}w$
+#而w的更新策略是:
+# $\begin{aligned}
+# &w\to w-\eta\frac{\partial C_{0}}{\partial w}-\frac{\eta\lambda}nw \\
+# &=\left(1-\frac{\eta\lambda}n\right)w-\eta\frac{\partial C_{0}}{\partial w}.
+# \end{aligned}$
+# 所以，这意味着，只在惩罚项中存在bit系数，bit会无线减小；而原损失函数部分确保了bit的更新有增大的可能
+# 不对，bit的可导已经体现在插值量化中了
 from __future__ import print_function, absolute_import
 
 import torch
@@ -96,27 +109,30 @@ class LSQActQuantizer(nn.Module):
         self.learning = learning
         assert self.bits != 1, "LSQ don't support binary quantization"
         assert self.qtype in ("qint", "quint"), "qtype just support qint or quint"
-        if self.qtype == "quint":
-            # unsigned activation is quantized to [0, 2^b-1]
-            self.Qn = 0
-            self.Qp = 2 ** self.bits - 1
-            self.Qn_1 = 0
-            self.Qp_1 = 2 ** (bits-1) - 1
-            # self.Qp_1 = 2 ** (bits+1) - 1
-        else:
-            # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
-            self.Qn = - 2 ** (self.bits - 1)
-            self.Qp = 2 ** (self.bits - 1) - 1
-            self.Qn_1 = - 2 ** (bits-1-1)
-            self.Qp_1 = 2 ** (bits-1-1) - 1
-            # self.Qn_1 = - 2 ** (bits-1+1)
-            # self.Qp_1 = 2 ** (bits-1+1) - 1
+        self.calQnQp()
 
         self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=True)
         self.alpha_bit = torch.nn.Parameter(torch.ones(1), requires_grad=True)#added, to decide bitwidth
         # self.alpha_bit = torch.nn.Parameter(torch.zeros(1), requires_grad=True)#added, to decide bitwidth
         self.grad_factor = 1.0
         self.observer_init = torch.tensor(1, dtype=torch.int8)
+
+    def calQnQp(self):
+        if self.qtype == "quint":
+            # unsigned activation is quantized to [0, 2^b-1]
+            self.Qn = 0
+            self.Qp = 2 ** self.bits - 1
+            self.Qn_1 = 0
+            self.Qp_1 = 2 ** (self.bits-1) - 1
+            # self.Qp_1 = 2 ** (bits+1) - 1
+        else:
+            # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
+            self.Qn = - 2 ** (self.bits - 1)
+            self.Qp = 2 ** (self.bits - 1) - 1
+            self.Qn_1 = - 2 ** (self.bits-1-1)
+            self.Qp_1 = 2 ** (self.bits-1-1) - 1
+            # self.Qn_1 = - 2 ** (bits-1+1)
+            # self.Qp_1 = 2 ** (bits-1+1) - 1
 
     def forward(self, x):
         if not self.quant:
@@ -143,6 +159,7 @@ class LSQActQuantizer(nn.Module):
         if self.alpha_bit.data[0] < 1e-4:
             self.bits = self.bits - 1
             self.alpha_bit.data[0] = 1.0
+            self.calQnQp()
         # if self.alpha_bit.data[0] >= 1.0:
         #     self.bits = self.bits + 1
         #     self.alpha_bit.data[0] = 0.0
@@ -160,21 +177,7 @@ class LSQWeightQuantizer(nn.Module):
 
         assert self.bits != 1, "LSQ don't support binary quantization"
         assert self.qtype in ("qint", "quint"), "qtype just support qint or quint"
-        if self.qtype == "quint":
-            # unsigned activation is quantized to [0, 2^b-1]
-            self.Qn = 0
-            self.Qp = 2 ** bits - 1
-            self.Qn_1 = 0
-            self.Qp_1 = 2 ** (bits-1) - 1
-            # self.Qp_1 = 2 ** (bits+1) - 1
-        else:
-            # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
-            self.Qn = - 2 ** (bits - 1)
-            self.Qp = 2 ** (bits - 1) - 1
-            self.Qn_1 = - 2 ** (bits-1-1)
-            self.Qp_1 = 2 ** (bits-1-1) - 1
-            # self.Qn_1 = - 2 ** (bits-1+1)
-            # self.Qp_1 = 2 ** (bits-1+1) - 1
+        self.calQnQp()
 
         self.per_channel = per_channel
         self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=True)
@@ -182,6 +185,23 @@ class LSQWeightQuantizer(nn.Module):
         # self.alpha_bit = torch.nn.Parameter(torch.zeros(1), requires_grad=True)#added, to decide bitwidth
         self.grad_factor = 1.0
         self.observer_init = torch.tensor(1, dtype=torch.int8)
+
+    def calQnQp(self):
+        if self.qtype == "quint":
+            # unsigned activation is quantized to [0, 2^b-1]
+            self.Qn = 0
+            self.Qp = 2 ** self.bits - 1
+            self.Qn_1 = 0
+            self.Qp_1 = 2 ** (self.bits-1) - 1
+            # self.Qp_1 = 2 ** (bits+1) - 1
+        else:
+            # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
+            self.Qn = - 2 ** (self.bits - 1)
+            self.Qp = 2 ** (self.bits - 1) - 1
+            self.Qn_1 = - 2 ** (self.bits-1-1)
+            self.Qp_1 = 2 ** (self.bits-1-1) - 1
+            # self.Qn_1 = - 2 ** (bits-1+1)
+            # self.Qp_1 = 2 ** (bits-1+1) - 1
 
     def forward(self, x):
         if not self.quant:
@@ -210,12 +230,13 @@ class LSQWeightQuantizer(nn.Module):
             # x = (1-self.alpha_bit.data[0]) * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp) + \
             # self.alpha_bit.data[0] * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn_1, self.Qp_1)
 
-        print('alpha and bit are ', self.alpha_bit[0], self.bits)
+        print('alpha and bit are ', self.alpha_bit[0], self.bits)#test alpha and bit
         
         #added, for bit prune
         if self.alpha_bit.data[0] < 1e-4:
             self.bits = self.bits - 1
             self.alpha_bit.data[0] = 1.0
+            self.calQnQp()
         # if self.alpha_bit.data[0] >= 1.0:
         #     self.bits = self.bits + 1
         #     self.alpha_bit.data[0] = 0.0

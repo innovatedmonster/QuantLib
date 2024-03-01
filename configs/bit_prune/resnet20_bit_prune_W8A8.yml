@@ -15,7 +15,7 @@ model:
     dir: './models/cifar10_fp.pth'
   quant_func: "BPConv2d"
   quant_params:
-    bits: 8
+    bits: 4
     quant_wgt: True
     wgt_qtype: "qint"
     wgt_per_channel: False

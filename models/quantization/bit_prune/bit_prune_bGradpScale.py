@@ -1,6 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+# 令bit是连续可导，且使用plain scale而不是lsq更新scale
+# uncomplete，暂时不使用
+
 from __future__ import print_function, absolute_import
 
 import torch
@@ -24,8 +27,8 @@ class Round(Function):
         grad_input = torch.clone(grad_output)
         return grad_input
 
-# forward 方法的第一个参数是 ctx，它是一个用于保存信息的上下文对象。forward 方法的作用是定义前向传播的计算过程，同时将需要在后向传播时使用的信息保存到 ctx 中。
-class FunLSQ(Function):
+# fixing, 应该在backward计算bit的grad
+class FunPS(Function):
     @staticmethod
     def forward(ctx, weight, alpha, g, Qn, Qp, per_channel=False):
         ctx.save_for_backward(weight, alpha)
@@ -120,13 +123,6 @@ class LSQActQuantizer(nn.Module):
             self.Qp_1 = 2 ** (self.bits-1-1) - 1
             # self.Qn_1 = - 2 ** (bits-1+1)
             # self.Qp_1 = 2 ** (bits-1+1) - 1
-        
-        #added, to maintain 1 bit's calculation runnable
-        if self.bits-1 == 1:
-            self.Qn = 0
-            self.Qp = 2 ** self.bits - 1
-            self.Qn_1 = 0
-            self.Qp_1 = 2 ** (self.bits-1) - 1
 
     def forward(self, x):
         if not self.quant:
@@ -196,13 +192,6 @@ class LSQWeightQuantizer(nn.Module):
             self.Qp_1 = 2 ** (self.bits-1-1) - 1
             # self.Qn_1 = - 2 ** (bits-1+1)
             # self.Qp_1 = 2 ** (bits-1+1) - 1
-        
-        #added, to maintain 1 bit's calculation runnable
-        if self.bits-1 == 1:
-            self.Qn = 0
-            self.Qp = 2 ** self.bits - 1
-            self.Qn_1 = 0
-            self.Qp_1 = 2 ** (self.bits-1) - 1
 
     def forward(self, x):
         if not self.quant:
