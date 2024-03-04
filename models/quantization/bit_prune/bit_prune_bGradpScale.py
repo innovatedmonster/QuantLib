@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 # 令bit是连续可导，且使用plain scale而不是lsq更新scale
-# uncomplete，暂时不使用
+# 尝试使用
 
 from __future__ import print_function, absolute_import
 
@@ -13,7 +13,6 @@ from torch.autograd import Function
 import math
 
 __all__ = ['BPConv2d', "Round", "FunLSQ"]
-
 
 class Round(Function):
     @staticmethod
@@ -27,8 +26,7 @@ class Round(Function):
         grad_input = torch.clone(grad_output)
         return grad_input
 
-# fixing, 应该在backward计算bit的grad
-class FunPS(Function):
+class FunLSQ(Function):
     @staticmethod
     def forward(ctx, weight, alpha, g, Qn, Qp, per_channel=False):
         ctx.save_for_backward(weight, alpha)
@@ -44,16 +42,7 @@ class FunPS(Function):
             w_q = w_q.contiguous().view(sizes)
         else:
             w_q = Round.apply(torch.div(weight, alpha)).clamp(Qn, Qp)
-            #test alpha(scale) and weight(x)
-            # print('\n\n-----\nscale shape is ', alpha.shape)
-            # print('x shape is ', weight.shape)
-            # print('w_q shape is ', w_q.shape)
-            #test alpha(scale) and weight(x)
             w_q = w_q * alpha
-            # test scale shape from [] to [1]
-            # print('\n\n-----forward\n')
-            # print('LSQ scale shape is ', alpha.shape)
-            # test scale shape from [] to [1]
         return w_q
 
     @staticmethod
@@ -80,13 +69,8 @@ class FunPS(Function):
             grad_alpha = ((smaller * Qn + bigger * Qp +
                            between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum().unsqueeze(dim=0)# grad must be shape[1] tensor
         grad_weight = between * grad_weight
-        #test alpha(scale) and weight(x)
-        # print('\n\n-----backward\nscale shape is ', alpha.shape)
-        # print('x shape is ', weight.shape)
-        # print('grad_weight shape is ', grad_weight.shape)
-        # print('grad_alpha shape is ', grad_alpha.shape)
-        #test alpha(scale) and weight(x)
-        return grad_weight, grad_alpha, None, None, None, None
+
+        return grad_weight, None, None, None, None, None
 
 
 class LSQActQuantizer(nn.Module):
@@ -101,11 +85,19 @@ class LSQActQuantizer(nn.Module):
         assert self.qtype in ("qint", "quint"), "qtype just support qint or quint"
         self.calQnQp()
 
-        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=True)
+        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+        self.scale_1 = torch.nn.Parameter(torch.ones(1), requires_grad=False)
         self.alpha_bit = torch.nn.Parameter(torch.ones(1), requires_grad=True)#added, to decide bitwidth
         # self.alpha_bit = torch.nn.Parameter(torch.zeros(1), requires_grad=True)#added, to decide bitwidth
         self.grad_factor = 1.0
+        self.grad_factor_1 = 1.0
         self.observer_init = torch.tensor(1, dtype=torch.int8)
+
+        #added self.max, self.min
+        min = torch.tensor([], requires_grad=False)
+        max = torch.tensor([], requires_grad=False)
+        self.register_buffer('min', min)
+        self.register_buffer('max', max)
 
     def calQnQp(self):
         if self.qtype == "quint":
@@ -123,22 +115,32 @@ class LSQActQuantizer(nn.Module):
             self.Qp_1 = 2 ** (self.bits-1-1) - 1
             # self.Qn_1 = - 2 ** (bits-1+1)
             # self.Qp_1 = 2 ** (bits-1+1) - 1
+        
+        #added, to maintain 1 bit's calculation runnable
+        if self.bits-1 == 1:
+            self.Qn = 0
+            self.Qp = 2 ** self.bits - 1
+            self.Qn_1 = 0
+            self.Qp_1 = 2 ** (self.bits-1) - 1
 
     def forward(self, x):
         if not self.quant:
             return x
+        #bug here，not support 1 bit which makes self.Qp equals 0 so that division error
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
+        self.grad_factor_1 = 1.0 / math.sqrt(x.numel() * self.Qp_1)
         if self.observer:
             if self.observer_init == 1:
                 self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                self.scale_1.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp_1)
                 self.observer_init = 0
             else:
                 self.scale.data[0] = 0.9*self.scale.data[0] + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
-
+                self.scale_1.data[0] = 0.9*self.scale_1.data[0] + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp_1)
         if self.observer or self.learning:
             # x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
-
-            x = (1-self.alpha_bit) * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn_1, self.Qp_1) + \
+            self.calcScale(x)
+            x = (1-self.alpha_bit) * FunLSQ.apply(x, self.scale_1, self.grad_factor_1, self.Qn_1, self.Qp_1) + \
             self.alpha_bit * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
             # x = (1-self.alpha_bit.data[0]) * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp) + \
             # self.alpha_bit.data[0] * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn_1, self.Qp_1)
@@ -154,6 +156,18 @@ class LSQActQuantizer(nn.Module):
         #     self.bits = self.bits + 1
         #     self.alpha_bit.data[0] = 0.0
         return x
+    
+    def calcScale(self, tensor):
+        if self.max.nelement() == 0 or self.max.data < tensor.max().data:
+            self.max.data = tensor.max().data
+        self.max.clamp_(min=0)
+
+        if self.min.nelement() == 0 or self.min.data > tensor.min().data:
+            self.min.data = tensor.min().data
+        self.min.clamp_(max=0)
+
+        self.scale.data[0] = (self.max - self.min) / (self.Qp - self.Qn)
+        self.scale_1.data[0] = (self.max - self.min) / (self.Qp_1 - self.Qn_1)
 
 
 class LSQWeightQuantizer(nn.Module):
@@ -170,11 +184,19 @@ class LSQWeightQuantizer(nn.Module):
         self.calQnQp()
 
         self.per_channel = per_channel
-        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=True)
+        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+        self.scale_1 = torch.nn.Parameter(torch.ones(1), requires_grad=False)
         self.alpha_bit = torch.nn.Parameter(torch.ones(1), requires_grad=True)#added, to decide bitwidth
         # self.alpha_bit = torch.nn.Parameter(torch.zeros(1), requires_grad=True)#added, to decide bitwidth
         self.grad_factor = 1.0
+        self.grad_factor_1 = 1.0
         self.observer_init = torch.tensor(1, dtype=torch.int8)
+
+        #added self.max, self.min
+        min = torch.tensor([], requires_grad=False)
+        max = torch.tensor([], requires_grad=False)
+        self.register_buffer('min', min)
+        self.register_buffer('max', max)
 
     def calQnQp(self):
         if self.qtype == "quint":
@@ -192,30 +214,44 @@ class LSQWeightQuantizer(nn.Module):
             self.Qp_1 = 2 ** (self.bits-1-1) - 1
             # self.Qn_1 = - 2 ** (bits-1+1)
             # self.Qp_1 = 2 ** (bits-1+1) - 1
+        
+        #added, to maintain 1 bit's calculation runnable
+        if self.bits-1 == 1:
+            self.Qn = 0
+            self.Qp = 2 ** self.bits - 1
+            self.Qn_1 = 0
+            self.Qp_1 = 2 ** (self.bits-1) - 1
 
     def forward(self, x):
         if not self.quant:
             return x
+        #bug here，not support 1 bit which makes self.Qp equals 0 so that division error
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
+        self.grad_factor_1 = 1.0 / math.sqrt(x.numel() * self.Qp_1)
         if self.observer:
             if self.per_channel:
                 x_tmp = x.detach().contiguous().view(x.size()[0], -1)
                 if self.observer_init == 1:
                     self.scale.data[0] = torch.mean(torch.abs(x_tmp), dim=1) * 2 / math.sqrt(self.Qp)
+                    self.scale_1.data[0] = torch.mean(torch.abs(x_tmp), dim=1) * 2 / math.sqrt(self.Qp_1)
                     self.observer_init = 0
                 else:
                     self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x_tmp), dim=1) * 2 / (
                         math.sqrt(self.Qp))
+                    self.scale_1.data[0] = 0.9 * self.scale_1.data[0] + 0.1 * torch.mean(torch.abs(x_tmp), dim=1) * 2 / (
+                        math.sqrt(self.Qp_1))
             else:
                 if self.observer_init == 1:
                     self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                    self.scale_1.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp_1)
                     self.observer_init = 0
                 else:
                     self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+                    self.scale_1.data[0] = 0.9 * self.scale_1.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp_1)
         if self.observer or self.learning:
             # x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
-
-            x = (1-self.alpha_bit) * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn_1, self.Qp_1) + \
+            self.calcScale(x)
+            x = (1-self.alpha_bit) * FunLSQ.apply(x, self.scale_1, self.grad_factor_1, self.Qn_1, self.Qp_1) + \
             self.alpha_bit * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
             # x = (1-self.alpha_bit.data[0]) * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp) + \
             # self.alpha_bit.data[0] * FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn_1, self.Qp_1)
@@ -231,6 +267,18 @@ class LSQWeightQuantizer(nn.Module):
         #     self.bits = self.bits + 1
         #     self.alpha_bit.data[0] = 0.0
         return x
+    
+    def calcScale(self, tensor):
+        if self.max.nelement() == 0 or self.max.data < tensor.max().data:
+            self.max.data = tensor.max().data
+        self.max.clamp_(min=0)
+
+        if self.min.nelement() == 0 or self.min.data > tensor.min().data:
+            self.min.data = tensor.min().data
+        self.min.clamp_(max=0)
+
+        self.scale.data[0] = (self.max - self.min) / (self.Qp - self.Qn)
+        self.scale_1.data[0] = (self.max - self.min) / (self.Qp_1 - self.Qn_1)
 
 
 class BPConv2d(nn.Conv2d):

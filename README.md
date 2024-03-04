@@ -130,7 +130,7 @@ $\begin{aligned}
  >
  >>**故应该令bit是连续可导，且使用plain scale而不是lsq更新scale**，其实现见models.quantization.bit_prune.bit_prune_bGradpScale.py
  >
- >>不对，bit的可导已经体现在插值量化中了
+ >>不对，bit的可导已经体现在插值量化中了。(但只是alpha_bit可导，bit不可导，也许这不够)
 
 ## Acknowledgement
 

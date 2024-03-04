@@ -131,6 +131,7 @@ class LSQActQuantizer(nn.Module):
     def forward(self, x):
         if not self.quant:
             return x
+        #bug here，not support 1 bit which makes self.Qp equals 0 so that division error
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
         if self.observer:
             if self.observer_init == 1:
@@ -207,6 +208,7 @@ class LSQWeightQuantizer(nn.Module):
     def forward(self, x):
         if not self.quant:
             return x
+        #bug here，not support 1 bit which makes self.Qp equals 0 so that division error
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
         if self.observer:
             if self.per_channel:
