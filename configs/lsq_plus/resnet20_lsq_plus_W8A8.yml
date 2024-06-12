@@ -4,16 +4,18 @@ solver:
 data:
  num_workers: 4
  pin_memory: False
- data_path: ../../data/cifar10/
+ data_path: ./data/cifar10/
 
 model:
-  name: 'resnet20'
+  name: 'resnet20_all'
   params:
     num_classes: 10
   pretrain:
-    pretrained: True
-    dir: '../../models/cifar10_fp.pth'
-  quant_func: "LSQPlusConv2d"
+    pretrained: False
+    dir: './models/cifar10_fp.pth'
+  quant_all: True
+  conv_quant_func: "LSQPlusConv2d"
+  fc_quant_func: "LSQPlusLinear"
   quant_params:
     bits: 8
     quant_wgt: True

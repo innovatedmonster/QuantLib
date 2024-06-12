@@ -171,3 +171,50 @@ class LSQPlusConv2d(nn.Conv2d):
 
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
+
+class LSQPlusLinear(nn.Linear):
+    def __init__(self, in_features, out_features,
+                 bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
+                 quant=True, observer=False, learning=False, observer_step=1):
+        super(LSQPlusLinear, self).__init__(in_features, out_features)
+        self.quant = quant
+        self.quant_wgt = quant_wgt
+        self.quant_act = quant_act
+        self.act_quantizer = LSQPlusActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer = LSQPlusWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.step = 0
+        self.observer_step = observer_step
+
+    def set_quant_config(self):
+        if self.step <= self.observer_step:
+            self.act_quantizer.quant = True
+            self.act_quantizer.observer = True
+            self.act_quantizer.learning = False
+
+            self.weight_quantizer.quant = True
+            self.weight_quantizer.observer = True
+            self.weight_quantizer.learning = False
+        else:
+            self.act_quantizer.quant = True
+            self.act_quantizer.observer = False
+            self.act_quantizer.learning = True
+
+            self.weight_quantizer.quant = True
+            self.weight_quantizer.observer = False
+            self.weight_quantizer.learning = True
+
+    def forward(self, x):
+        self.step += 1
+        self.set_quant_config()
+        if self.quant and self.quant_act:
+            act = self.act_quantizer(x)
+        else:
+            act = x
+        if self.quant and self.quant_wgt:
+            wgt = self.weight_quantizer(self.weight)
+        else:
+            wgt = self.weight
+
+        output = F.linear(act, wgt, self.bias)
+        return output
