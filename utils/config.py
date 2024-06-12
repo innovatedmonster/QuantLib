@@ -18,7 +18,10 @@ def _get_default_config():
 
     # student model
     c.model = edict()
-    c.model.quant_func = "DAQConv"
+    c.model.quant_all = False
+    c.model.quant_func = "Conv"
+    c.model.conv_quant_func = "Conv"
+    c.model.fc_quant_func = "Linear"
     c.model.quant_params = edict()
     c.model.params = edict()
     c.model.pretrain = edict()

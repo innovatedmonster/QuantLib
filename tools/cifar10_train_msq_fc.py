@@ -220,6 +220,3 @@ def main(args):
     run(config)
 
     print('success!')
-
-
-

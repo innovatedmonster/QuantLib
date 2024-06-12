@@ -111,7 +111,7 @@ def printLocation(location):
     print('entered ' + location)
 
 # added, plot and record
-def plotAndRecord(num_epochs, accuracies, pngName, logger):
+def plotAndRecord(num_epochs, max_epochs, accuracies, pngName, logger):
     # 画出准确率折线图
     plt.plot(range(0, num_epochs+1), accuracies, label='Accuracy')
     plt.xlabel('Epoch')
@@ -126,6 +126,8 @@ def plotAndRecord(num_epochs, accuracies, pngName, logger):
     
     # 记录到log中
     logger.write('epoch' + str(num_epochs) + ':\tacc' + str(accuracies[num_epochs]) + '\n')
+    if(num_epochs == max_epochs):
+        logger.write('epoch' + '0-'+str(max_epochs) + ':\tbest_acc' + str(max(accuracies)) + '\n')
     logger.flush()
 
 # added, log alpha and bits

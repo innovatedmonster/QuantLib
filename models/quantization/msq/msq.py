@@ -9,7 +9,7 @@ import torch.nn.functional as F
 from torch.autograd import Function
 import math
 
-__all__ = ['LSQConv2d', "Round", "FunLSQ"]
+__all__ = ['MSQConv2d', 'MSQLinear', "Round", "FunLSQ"]
 
 
 class Round(Function):
@@ -25,76 +25,57 @@ class Round(Function):
         return grad_input
 
 # forward 方法的第一个参数是 ctx，它是一个用于保存信息的上下文对象。forward 方法的作用是定义前向传播的计算过程，同时将需要在后向传播时使用的信息保存到 ctx 中。
-class FunLSQ(Function):
+class FunMSQ(Function):
     @staticmethod
-    def forward(ctx, weight, alpha, g, Qn, Qp, per_channel=False):
-        ctx.save_for_backward(weight, alpha)
+    def forward(ctx, weight, alpha, g, Qn, Qp, beta, per_channel=False):
+        ctx.save_for_backward(weight, alpha, beta)
         ctx.other = g, Qn, Qp, per_channel
         if per_channel:
             sizes = weight.size()
             weight = weight.contiguous().view(weight.size()[0], -1)
             weight = torch.transpose(weight, 0, 1)             
             alpha = torch.broadcast_to(alpha, weight.size())
-            w_q = Round.apply(torch.div(weight, alpha)).clamp(Qn, Qp)
-            w_q = w_q * alpha
+            w_q = Round.apply(torch.div(weight - beta, alpha)).clamp(Qn, Qp)
+            w_q = w_q * alpha + beta
             w_q = torch.transpose(w_q, 0, 1)
             w_q = w_q.contiguous().view(sizes)
         else:
-            w_q = Round.apply(torch.div(weight, alpha)).clamp(Qn, Qp)
-            #test alpha(scale) and weight(x)
-            # print('\n\n-----\nscale shape is ', alpha.shape)
-            # print('x shape is ', weight.shape)
-            # print('w_q shape is ', w_q.shape)
-            #test alpha(scale) and weight(x)
-            w_q = w_q * alpha
-            # test scale shape from [] to [1]
-            # print('\n\n-----forward\n')
-            # print('LSQ scale shape is ', alpha.shape)
-            # test scale shape from [] to [1]
+            w_q = Round.apply(torch.div(weight - beta, alpha)).clamp(Qn, Qp)
+            w_q = w_q * alpha + beta
         return w_q
 
     @staticmethod
     def backward(ctx, grad_weight):
-        weight, alpha = ctx.saved_tensors
+        weight, alpha, beta = ctx.saved_tensors
         g, Qn, Qp, per_channel = ctx.other
         if per_channel:
             sizes = weight.size()
             weight = weight.contiguous().view(weight.size()[0], -1)
             weight = torch.transpose(weight, 0, 1)
             alpha = torch.broadcast_to(alpha, weight.size())
-            q_w = weight / alpha
+            q_w = (weight - beta) / alpha
             q_w = torch.transpose(q_w, 0, 1)
             q_w = q_w.contiguous().view(sizes)
         else:
-            q_w = weight / alpha
+            q_w = (weight - beta) / alpha
         smaller = (q_w < Qn).float()
         bigger = (q_w > Qp).float()
         between = 1.0 - smaller - bigger  # 得到位于量化区间的index
-        if per_channel:
-            grad_alpha = ((smaller * Qn + bigger * Qp + between * Round.apply(q_w) - between * q_w)*grad_weight * g)
-            grad_alpha = grad_alpha.contiguous().view(grad_alpha.size()[0], -1).sum(dim=1)
-        else:
-            grad_alpha = ((smaller * Qn + bigger * Qp +
-                           between * Round.apply(q_w) - between * q_w)*grad_weight * g).sum().unsqueeze(dim=0)# grad must be shape[1] tensor
+        
+        grad_beta = ((smaller + bigger) * grad_weight * g).sum().unsqueeze(dim=0)
         grad_weight = between * grad_weight
-        #test alpha(scale) and weight(x)
-        # print('\n\n-----backward\nscale shape is ', alpha.shape)
-        # print('x shape is ', weight.shape)
-        # print('grad_weight shape is ', grad_weight.shape)
-        # print('grad_alpha shape is ', grad_alpha.shape)
-        #test alpha(scale) and weight(x)
-        return grad_weight, grad_alpha, None, None, None, None
+        return grad_weight, None, None, None, None, grad_beta
 
 
-class LSQActQuantizer(nn.Module):
+class MSQActQuantizer(nn.Module):
     def __init__(self, bits, qtype="quint", quant=False, observer=False, learning=False):
-        super(LSQActQuantizer, self).__init__()
+        super(MSQActQuantizer, self).__init__()
         self.bits = bits
         self.qtype = qtype
         self.quant = quant
         self.observer = observer
         self.learning = learning
-        assert self.bits != 1, "LSQ don't support binary quantization"
+        assert self.bits != 1, "MSQ don't support binary quantization"
         assert self.qtype in ("qint", "quint"), "qtype just support qint or quint"
         if self.qtype == "quint":
             # unsigned activation is quantized to [0, 2^b-1]
@@ -104,30 +85,28 @@ class LSQActQuantizer(nn.Module):
             # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
             self.Qn = - 2 ** (self.bits - 1)
             self.Qp = 2 ** (self.bits - 1) - 1
-        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=True)
+        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=False)
+        self.zero_point = torch.nn.Parameter(torch.ones(0), requires_grad=False)
         self.grad_factor = 1.0
-        self.observer_init = torch.tensor(1, dtype=torch.int8)
 
     def forward(self, x):
         if not self.quant:
             return x
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
-        if self.observer:
-            if self.observer_init == 1:
-                self.scale.data[0] = torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
-                self.observer_init = 0
-            else:
-                self.scale.data[0] = 0.9*self.scale.data[0] + 0.1*torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
+        
+        min_val = torch.min(x.detach())
+        self.scale.data = (torch.max(x.detach()) - min_val) / (self.Qp - self.Qn)
+        self.zero_point.data = min_val - self.scale.data * self.Qn
+        
 
         if self.observer or self.learning:
-            x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
-        # print('after FunLSQ, LSQAct scale shape is ', self.scale.data.shape)
+            x = FunMSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp)
         return x
 
 
-class LSQWeightQuantizer(nn.Module):
+class MSQWeightQuantizer(nn.Module):
     def __init__(self, bits, qtype="qint", per_channel=False, quant=False, observer=False, learning=False):
-        super(LSQWeightQuantizer, self).__init__()
+        super(MSQWeightQuantizer, self).__init__()
         self.bits = bits
         self.qtype = qtype
         self.quant = quant
@@ -168,21 +147,21 @@ class LSQWeightQuantizer(nn.Module):
                 else:
                     self.scale.data[0] = 0.9 * self.scale.data[0] + 0.1 * torch.mean(torch.abs(x.detach()))*2/math.sqrt(self.Qp)
         if self.observer or self.learning:
-            x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
+            x = FunMSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
         # print('after FunLSQ, LSQWeight scale shape is ', self.scale.data.shape)
         return x
 
 
-class LSQConv2d(nn.Conv2d):
+class MSQConv2d(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
                  bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
                  quant=True, observer=False, learning=False, observer_step=1):
-        super(LSQConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        super(MSQConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act
-        self.act_quantizer = LSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
-        self.weight_quantizer = LSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+        self.act_quantizer = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
         self.step = 0
         self.observer_step = observer_step
@@ -220,16 +199,16 @@ class LSQConv2d(nn.Conv2d):
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
 
-class LSQLinear(nn.Linear):
+class MSQLinear(nn.Linear):
     def __init__(self, in_features, out_features,
                  bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
                  quant=True, observer=False, learning=False, observer_step=1):
-        super(LSQLinear, self).__init__(in_features, out_features)
+        super(MSQLinear, self).__init__(in_features, out_features)
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act
-        self.act_quantizer = LSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
-        self.weight_quantizer = LSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+        self.act_quantizer = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
         self.step = 0
         self.observer_step = observer_step
