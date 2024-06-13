@@ -34,10 +34,9 @@ class FunMSQ(Function):
         grad_weight = between * grad_weight
         return grad_weight, None,  None, None, None, grad_beta
 
-
-class MSQActQuantizer(nn.Module):
+class QParam(nn.Module):
     def __init__(self, bits, qtype="quint", quant=False, observer=False, learning=False):
-        super(MSQActQuantizer, self).__init__()
+        super(QParam, self).__init__()
         self.bits = bits
         self.qtype = qtype
         self.quant = quant
@@ -54,70 +53,75 @@ class MSQActQuantizer(nn.Module):
             self.Qn = - 2 ** (self.bits - 1)
             self.Qp = 2 ** (self.bits - 1) - 1
         self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=False)
-        self.zero_point = torch.nn.Parameter(torch.ones(0), requires_grad=False)
         self.grad_factor = 1.0
+
+        min = torch.tensor([], requires_grad=False)
+        max = torch.tensor([], requires_grad=False)
+        self.register_buffer('min', min)
+        self.register_buffer('max', max)
+    
+    def updateSZ(self, x):
+        if self.max.nelement() == 0 or self.max.data < x.max().data:
+            self.max.data = x.max().data
+        
+        if self.min.nelement() == 0 or self.min.data > x.min().data:
+            self.min.data = x.min().data
+
+        min_val = self.min.detach()
+        self.scale.data = (self.max.detach().detach() - min_val) / (self.Qp - self.Qn)
+        if hasattr(self, 'zero_point'):
+            self.zero_point.data = min_val - self.scale.data * self.Qn
+
+    def forward(self, x):
+        pass
+
+class MSQActQuantizer(QParam):
+    def __init__(self, bits, qtype="quint", quant=False, observer=False, learning=False):
+        super(MSQActQuantizer, self).__init__(bits, qtype=qtype, quant=quant, observer=observer, learning=learning)
+        self.zero_point = torch.nn.Parameter(torch.ones(0), requires_grad=False)
 
     def forward(self, x):
         if not self.quant:
             return x
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
         
-        min_val = torch.min(x.detach())
-        self.scale.data = (torch.max(x.detach()) - min_val) / (self.Qp - self.Qn)
-        self.zero_point.data = min_val - self.scale.data * self.Qn
-        
+        if torch.is_grad_enabled(): #训练模式下才会更新sz
+            self.updateSZ(x)
 
         if self.observer or self.learning:
             x = FunMSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.zero_point)
         return x
 
 
-class MSQWeightQuantizer(nn.Module):
+class MSQWeightQuantizer(QParam):
     def __init__(self, bits, qtype="qint", per_channel=False, quant=False, observer=False, learning=False):
-        super(MSQWeightQuantizer, self).__init__()
-        self.bits = bits
-        self.qtype = qtype
-        self.quant = quant
-        self.observer = observer
-        self.learning = learning
-        assert self.bits != 1, "LSQ don't support binary quantization"
-        assert self.qtype in ("qint", "quint"), "qtype just support qint or quint"
-        if self.qtype == "quint":
-            # unsigned activation is quantized to [0, 2^b-1]
-            self.Qn = 0
-            self.Qp = 2 ** bits - 1
-        else:
-            # signed weight/activation is quantized to [-2^(b-1), 2^(b-1)-1]
-            self.Qn = - 2 ** (bits - 1)
-            self.Qp = 2 ** (bits - 1) - 1
+        super(MSQWeightQuantizer, self).__init__(bits, qtype=qtype, quant=quant, observer=observer, learning=learning)
         self.per_channel = per_channel
-        self.scale = torch.nn.Parameter(torch.ones(1), requires_grad=False)
-        self.grad_factor = 1.0
 
     def forward(self, x):
         if not self.quant:
             return x
         self.grad_factor = 1.0 / math.sqrt(x.numel() * self.Qp)
         
-        if self.per_channel:
-            x_tmp = x.detach().contiguous().view(x.size()[0], -1)
-            min_val = torch.min(x_tmp.detach())
-            self.scale.data = (torch.max(x_tmp.detach()) - min_val) / (self.Qp - self.Qn)
-        else:
-            min_val = torch.min(x.detach())
-            self.scale.data = (torch.max(x.detach()) - min_val) / (self.Qp - self.Qn)
-        self.zero_point.data = min_val - self.scale.data * self.Qn
+        if torch.is_grad_enabled(): #训练模式下才会更新sz
+            if self.per_channel:
+                x_tmp = x.detach().contiguous().view(x.size()[0], -1)
+                self.updateSZ(x_tmp)
+            else:
+                self.updateSZ(x)
 
         if self.observer or self.learning:
             x = FunLSQ.apply(x, self.scale, self.grad_factor, self.Qn, self.Qp, self.per_channel)
         return x
 
-
-class MSQConv2d(nn.Conv2d):
+#未svd分解，scale不可导，wgt无zero_point而act有。wgt可导可不导
+# 当wgt不可导，退化成朴素ptq；当wgt可导，是朴素qat
+# V1主要是测试基础量化功能是否正常
+class MSQConv2dV1(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
                  bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
                  quant=True, observer=False, learning=False, observer_step=1):
-        super(MSQConv2d, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        super(MSQConv2dV1, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act
@@ -160,11 +164,13 @@ class MSQConv2d(nn.Conv2d):
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
 
-class MSQLinear(nn.Linear):
+#未svd分解，scale不可导，wgt无zero_point而act有。wgt可导可不导
+# 当wgt不可导，退化成朴素ptq；当wgt可导，是朴素qat
+class MSQLinearV1(nn.Linear):
     def __init__(self, in_features, out_features,
                  bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
                  quant=True, observer=False, learning=False, observer_step=1):
-        super(MSQLinear, self).__init__(in_features, out_features)
+        super(MSQLinearV1, self).__init__(in_features, out_features)
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act

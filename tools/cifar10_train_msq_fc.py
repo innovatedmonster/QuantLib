@@ -18,16 +18,16 @@ from utils.util import Logger
 from utils.util import plotAndRecord
 
 # path
-path_log = '/home/xcn/lfh/NAS+quantization/haq_lsq/QuantLib/log4test/'
-path_log_opt_param = os.path.join(path_log, 'optimizer_param.log')
+path_log = '/home/NAS+Quantization/QuantLib/log4test/'
+path_log_opt_param = os.path.join(path_log, 'optimizer_param_msq.log')
 
 # logger for test
-# logger_opt_param = Logger(path_log_opt_param)
+logger_opt_param = Logger(path_log_opt_param)
 
 device = None
 
 
-def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, postfix_dict):
+def train_single_epoch_qat(model, dataloader, criterion, optimizer, epoch, writer, postfix_dict):
     model.train()
     total_step = len(dataloader)
 
@@ -65,6 +65,38 @@ def train_single_epoch(model, dataloader, criterion, optimizer, epoch, writer, p
                 for key, value in log_dict.items():
                     writer.add_scalar('train/{}'.format(key), value, log_step)
 
+def train_single_epoch_ptq(model, dataloader, criterion, optimizer, epoch, writer, postfix_dict):
+    model.train()
+    total_step = len(dataloader)
+
+    log_dict = {}
+
+    tbar = tqdm.tqdm(enumerate(dataloader), total=len(dataloader))
+    for i, (imgs, labels) in tbar:
+        imgs = imgs.to(device)
+        labels = labels.to(device)
+
+        pred_dict = model(imgs)
+        loss = criterion['train'](pred_dict['out'], labels)
+        for k, v in loss.items():
+            log_dict[k] = v.item()
+
+        # logging
+        f_epoch = epoch + i / total_step
+        for key, value in log_dict.items():
+            postfix_dict['train/{}'.format(key)] = value
+
+        desc = '{:5s}'.format('train')
+        desc += ', {:06d}/{:06d}, {} epoch'.format(i, total_step, epoch)
+        tbar.set_description(desc)
+        tbar.set_postfix(**postfix_dict)
+
+        # tensorboard
+        if i % 10 == 0:
+            log_step = int(f_epoch * 1280)
+            if writer is not None:
+                for key, value in log_dict.items():
+                    writer.add_scalar('train/{}'.format(key), value, log_step)
 
 def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, postfix_dict, eval_type):
     losses = AverageMeter()
@@ -73,6 +105,8 @@ def evaluate_single_epoch(device, model, dataloader, criterion, epoch, writer, p
     model.eval()
 
     with torch.no_grad():
+        #test is_grad_enabled
+        # print('test phase: is_grad_enabled? ', torch.is_grad_enabled())
         total_step = len(dataloader)
         tbar = tqdm.tqdm(enumerate(dataloader), total=total_step)
 
@@ -126,9 +160,18 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
         config.model.conv_quant_func+'_'+config.model.fc_quant_func+'_acc'
     logger_record = Logger(pngName+'.log')
 
+    if config.model.qat:
+        train_single_epoch = train_single_epoch_qat
+        print('qat!')
+    else:
+        train_single_epoch = train_single_epoch_ptq
+        print('ptq!')
+
     for epoch in range(start_epoch, num_epochs):
         # train phase
         train_single_epoch(model, dataloaders['train'], criterion, optimizer, epoch, writer, postfix_dict)
+        #test is_grad_enabled
+        # print('train phase: is_grad_enabled? ', torch.is_grad_enabled())
 
         # test phase
         top1, top5 = evaluate_single_epoch(device, model, dataloaders['test'], criterion, epoch, writer,
@@ -161,7 +204,8 @@ def run(config):
 
     # test model.param
     # for name, param in model.named_parameters():
-    #     logger_opt_param.write(name + '\n')
+    #     logger_opt_param.write('\n--------' + name + '\n' + str(param.requires_grad)+ 
+    #                            '\n' + str(param.grad))
     # logger_opt_param.flush()
     # test model.param
     
@@ -190,6 +234,12 @@ def run(config):
     writer = SummaryWriter(config.train['model_dir'])
 
     train(config, model, dataloaders, criterion, optimizer, scheduler, writer, last_epoch+1)
+
+    # test model.param
+    for name, param in model.named_parameters():
+        logger_opt_param.write('\n--------' + name + '\n' + str(param.requires_grad)+ 
+                               '\n' + str(param.grad))
+    logger_opt_param.flush()
 
 
 def count_parameters(model):

@@ -18,6 +18,7 @@ def _get_default_config():
 
     # student model
     c.model = edict()
+    c.model.qat = True
     c.model.quant_all = False
     c.model.quant_func = "Conv"
     c.model.conv_quant_func = "Conv"

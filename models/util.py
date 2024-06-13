@@ -15,8 +15,8 @@ from models.quantization.qil.qil_plus import QILPlusConv2d
 # from models.quantization.bit_prune.bit_prune_asc import BPConv2d
 from models.quantization.bit_prune.bit_prune_bGradpScale import BPConv2d
 
-from models.quantization.msq.msq import MSQConv2d
-from models.quantization.msq.msq import MSQLinear
+from models.quantization.msq.msq import MSQConv2dV1
+from models.quantization.msq.msq import MSQLinearV1
 
 def get_func(func_name):
     func = globals().get(func_name)
