@@ -11,12 +11,12 @@ model:
   params:
     num_classes: 10
   pretrain:
-    pretrained: True
+    pretrained: False
     dir: './models/cifar10_fp.pth'
-  qat: False
+  qat: True
   quant_all: True
   conv_quant_func: "MSQConv2dV1"
-  fc_quant_func: "MSQLinearV1"
+  fc_quant_func: "MSQLinearV2"
   quant_params:
     bits: 4
     quant_wgt: True
@@ -32,7 +32,7 @@ model:
 train:
   dir: "./output"
   batch_size: 256
-  num_epochs: 3
+  num_epochs: 400
   model_dir: '_msq_fc_W8A8_240611'
   save_model_frequency: 1
 

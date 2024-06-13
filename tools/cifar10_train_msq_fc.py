@@ -165,7 +165,8 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
         print('qat!')
     else:
         train_single_epoch = train_single_epoch_ptq
-        print('ptq!')
+        num_epochs = 10
+        print('ptq! change num_epochs to ', num_epochs)
 
     for epoch in range(start_epoch, num_epochs):
         # train phase
@@ -188,8 +189,8 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
         # plot and record acc
         accuracies.append(top1)
         plotAndRecord(epoch, num_epochs-1, accuracies, pngName+'.png', logger_record)
-        if epoch == num_epochs-1:
-            print('\nbest_accuracy: ' + str(best_accuracy))
+        if (epoch+1)%10 == 0:
+            print('\ncurrent best_accuracy: ' + str(best_accuracy))
 
     utils.checkpoint.save_checkpoint(config, model, optimizer, scheduler,
                                      None, None, None, None, epoch, 0, 'model')
@@ -258,6 +259,8 @@ def main(args):
         raise Exception('no configuration file')
 
     config = utils.config.load(args.config_file)
+    if not config.model.pretrain.pretrained and not config.model.qat:
+        raise Exception('when PTQ, pretrained model should be loaded!')
 
     os.environ["CUDA_VISIBLE_DEVICES"] = str(config.gpu)
     # test guest1服务器的gpu是否有问题, 设置cuda不可用，

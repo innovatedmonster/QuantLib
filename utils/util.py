@@ -12,6 +12,7 @@ import random
 from torchvision.transforms import *
 import torch
 import matplotlib.pyplot as plt
+import models.quantization.lsq.lsq as lsq
 
 def prepare_train_directories(config, model_type):
     out_dir = config.train[model_type + '_dir']
@@ -141,3 +142,43 @@ def bits_log(model, logger):
                              str(model._modules[m].alpha_bit[0]) + ' ' + str(model._modules[m].bits) + '\n')
                 logger.flush()
     return
+
+# added, svd decomposition
+#通用的量化
+def pTensor_quant(X, bit=6):
+    Qn = 0
+    Qp = 2 ** bit - 1
+    X_max = torch.max(X)
+    X_min = torch.min(X)
+    
+    scale_X = (X_max-X_min) / (Qp-Qn)
+    zero_point = -(X_min/scale_X)
+    
+    X_int = lsq.Round.apply(torch.div(X, scale_X)+zero_point).clamp(Qn, Qp)
+    X_hat = (X_int-zero_point) * scale_X
+    
+    return X_hat
+
+def pTensor_quant_svd(U, S, VT, bit=6):
+    U_hat = pTensor_quant(U, bit=bit)
+    S_hat = pTensor_quant(S, bit=bit)
+    VT_hat = pTensor_quant(VT, bit=bit)
+    return U_hat, S_hat, VT_hat
+
+def cal_quant_loss(X, X_hat):
+    loss = torch.sum(torch.square(X - X_hat))
+    loss = torch.sqrt(loss)
+    return loss
+
+def scaleSVD(U, S, VT):
+    scaleMatrix = torch.sqrt(torch.sqrt(S))
+    scaleMatrix_1 = scaleMatrix.clone()
+    for i in range(scaleMatrix_1.size(0)):
+        scaleMatrix_1[i, i] = 1 / scaleMatrix_1[i][i]
+    # print(scaleMatrix)
+    # print(scaleMatrix_1)
+    
+    U = torch.mm(U, scaleMatrix)
+    S = torch.mm(scaleMatrix_1, torch.mm(S, scaleMatrix_1))
+    VT = torch.mm(scaleMatrix, VT)
+    return U, S, VT

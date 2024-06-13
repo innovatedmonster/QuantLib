@@ -17,6 +17,7 @@ from models.quantization.bit_prune.bit_prune_bGradpScale import BPConv2d
 
 from models.quantization.msq.msq import MSQConv2dV1
 from models.quantization.msq.msq import MSQLinearV1
+from models.quantization.msq.msq import MSQLinearV2
 
 def get_func(func_name):
     func = globals().get(func_name)
