@@ -13,6 +13,7 @@ from torchvision.transforms import *
 import torch
 import matplotlib.pyplot as plt
 import models.quantization.lsq.lsq as lsq
+import torch.nn.functional as F
 
 def prepare_train_directories(config, model_type):
     out_dir = config.train[model_type + '_dir']
@@ -159,11 +160,13 @@ def pTensor_quant(X, bit=6):
     
     return X_hat
 
-def pTensor_quant_svd(U, S, VT, bit=6):
+def pTensor_quant_svd(U, S, VT=None, bit=6):
     U_hat = pTensor_quant(U, bit=bit)
     S_hat = pTensor_quant(S, bit=bit)
-    VT_hat = pTensor_quant(VT, bit=bit)
-    return U_hat, S_hat, VT_hat
+    if VT is not None:
+        VT_hat = pTensor_quant(VT, bit=bit)
+        return U_hat, S_hat, VT_hat
+    return U_hat, S_hat
 
 def cal_quant_loss(X, X_hat):
     loss = torch.sum(torch.square(X - X_hat))
@@ -182,3 +185,75 @@ def scaleSVD(U, S, VT):
     S = torch.mm(scaleMatrix_1, torch.mm(S, scaleMatrix_1))
     VT = torch.mm(scaleMatrix, VT)
     return U, S, VT
+
+# added, rpca decomposition
+def shrinkage(X, tau):
+    return torch.sign(X) * F.relu(torch.abs(X) - tau)
+
+def randomized_svd(X, k):
+    """
+    Computes a low-rank approximation to the singular value decomposition using randomized projections.
+    X: input matrix
+    k: number of singular values and vectors to compute
+    """
+    m, n = X.shape
+    P = torch.randn(n, k, device=X.device)
+    Z = X @ P
+    Q, _ = torch.qr(Z)
+    Y = Q.T @ X
+    U_hat, S, V = torch.svd(Y, some=False)
+    U = Q @ U_hat
+    return U[:, :k], S[:k], V[:, :k]
+
+def svd_threshold(X, tau, k=10):
+    U, S, V = randomized_svd(X, k)
+    S_threshold = shrinkage(S, tau)
+    rank = (S_threshold > 0).sum().item()
+    U = U[:, :rank]
+    V = V[:, :rank]
+    return U @ torch.diag(S_threshold[:rank]) @ V.t()
+
+def rpca_2d(D, lambda_=None, mu=None, max_iter=1000, tol=1e-7, k=10):
+    m, n = D.shape
+    if lambda_ is None:
+        lambda_ = 1.0 / torch.sqrt(torch.tensor(float(max(m, n)), device=D.device))
+    if mu is None:
+        mu = (m * n) / (4.0 * torch.sum(torch.abs(D)))
+        
+    L = torch.zeros_like(D, device=D.device)
+    S = torch.zeros_like(D, device=D.device)
+    Y = D / torch.norm(D, p='fro')
+    
+    for i in range(max_iter):
+        L_prev = L.clone()
+        S_prev = S.clone()
+        
+        # Update L
+        temp = D - S + (1.0 / mu) * Y
+        L = svd_threshold(temp, 1.0 / mu, k)
+        
+        # Update S
+        temp = D - L + (1.0 / mu) * Y
+        S = shrinkage(temp, lambda_ / mu)
+        
+        # Update Y
+        Y = Y + mu * (D - L - S)
+        
+        # Check for convergence
+        error = torch.norm(D - L - S, p='fro') / torch.norm(D, p='fro')
+        if error < tol:
+            break
+            
+    return L, S
+
+def rpca_4d(X, lambda_=None, mu=None, max_iter=1000, tol=1e-7, k=10):
+    batch_size, channels, height, width = X.shape
+    L = torch.zeros_like(X, device=X.device)
+    S = torch.zeros_like(X, device=X.device)
+    
+    for b in range(batch_size):
+        for c in range(channels):
+            D = X[b, c, :, :]
+            L[b, c, :, :], S[b, c, :, :] = rpca_2d(D, lambda_, mu, max_iter, tol, k)
+    
+    return L, S

@@ -214,6 +214,88 @@ class MSQLinearV1(nn.Linear):
         output = F.linear(act, wgt, self.bias)
         return output
 
+#不完整，缺少img2col一步！
+#svd分解，scale不可导，wgt无zero_point而act有。wgt可导可不导
+# 当wgt不可导，是msq_vPtq；当wgt可导，是msq_vQat
+class MSQConv2dV2(nn.Linear):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
+                 bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
+                 quant=True, observer=False, learning=False, observer_step=1):
+        super(MSQConv2dV2, self).__init__(in_channels, out_channels, kernel_size, stride, padding, dilation, groups, bias)
+        self.quant = quant
+        self.quant_wgt = quant_wgt
+        self.quant_act = quant_act
+        self.act_quantizer_u = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.act_quantizer_s = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.act_quantizer_v = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_u = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_s = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_v = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.step = 0
+        self.observer_step = observer_step
+
+    def wgt_quant_svd(self, U, S, VT):
+        U_hat = self.weight_quantizer_u(U)
+        S_hat = self.weight_quantizer_s(S)
+        VT_hat = self.weight_quantizer_v(VT)
+        return U_hat, S_hat, VT_hat
+    
+    def act_quant_svd(self, U, S, VT):
+        U_hat = self.act_quantizer_u(U)
+        S_hat = self.act_quantizer_s(S)
+        VT_hat = self.act_quantizer_v(VT)
+        return U_hat, S_hat, VT_hat
+
+    def forward(self, x):
+        self.step += 1
+
+        # 1.svd分解
+        Ux, Sx, VTx = torch.linalg.svd(x, full_matrices=False)
+        Uw, Sw, VTw = torch.linalg.svd(self.weight, full_matrices=False)
+        Sx = torch.diag(Sx)
+        Sw = torch.diag(Sw)
+        # 2.缩放
+        Ux, Sx, VTx = util.scaleSVD(Ux, Sx, VTx)
+        Uw, Sw, VTw = util.scaleSVD(Uw, Sw, VTw)
+        # 3.分别量化并合成
+        if self.quant and self.quant_act:
+            # act2 = self.act_quantizer(x)
+            Ux_hat, Sx_hat, VTx_hat = self.act_quant_svd(Ux, Sx, VTx)
+            act = torch.mm(Ux_hat, torch.mm(Sx_hat, VTx_hat))
+        else:
+            act = x
+        if self.quant and self.quant_wgt:
+            # wgt2 = self.weight_quantizer(self.weight)
+            Uw_hat, Sw_hat, VTw_hat = self.wgt_quant_svd(Uw, Sw, VTw)
+            # Uw_hat, Sw_hat, VTw_hat = self.act_quant_svd(Uw, Sw, VTw)#fixed, unknown
+            wgt = torch.mm(Uw_hat, torch.mm(Sw_hat, VTw_hat))
+        else:
+            wgt = self.weight
+
+        output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # output2 = F.linear(act2, wgt2, self.bias)
+        # output_ori = F.linear(x, self.weight, self.bias)
+        # 4.打印量化误差
+        # loss_X_svd = util.cal_quant_loss(x, act)
+        # print("loss_X_svd: ", loss_X_svd)
+        # loss_W_svd = util.cal_quant_loss(self.weight, wgt)
+        # print("loss_W_svd: ", loss_W_svd)
+        # loss_svd = util.cal_quant_loss(output, output_ori)
+        # print("loss_svd: ", loss_svd)
+
+        # loss_X_ord = util.cal_quant_loss(x, act2)
+        # print("loss_X_ord: ", loss_X_ord)
+        # loss_W_ord = util.cal_quant_loss(self.weight, wgt2)
+        # print("loss_W_ord: ", loss_W_ord)
+        # loss_ord = util.cal_quant_loss(output2, output_ori)
+        # print("loss_ord: ", loss_ord)
+        # print('----------------------------')
+
+        return output
+
 #svd分解，scale不可导，wgt无zero_point而act有。wgt可导可不导
 # 当wgt不可导，是msq_vPtq；当wgt可导，是msq_vQat
 class MSQLinearV2(nn.Linear):
@@ -224,45 +306,32 @@ class MSQLinearV2(nn.Linear):
         self.quant = quant
         self.quant_wgt = quant_wgt
         self.quant_act = quant_act
-        self.act_quantizer = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
-        self.weight_quantizer = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+        self.act_quantizer_u = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.act_quantizer_s = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.act_quantizer_v = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_u = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_s = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer_v = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
         self.step = 0
         self.observer_step = observer_step
 
-    def set_quant_config(self):
-        if self.step <= self.observer_step:
-            self.act_quantizer.quant = True
-            self.act_quantizer.observer = True
-            self.act_quantizer.learning = False
-
-            self.weight_quantizer.quant = True
-            self.weight_quantizer.observer = True
-            self.weight_quantizer.learning = False
-        else:
-            self.act_quantizer.quant = True
-            self.act_quantizer.observer = False
-            self.act_quantizer.learning = True
-
-            self.weight_quantizer.quant = True
-            self.weight_quantizer.observer = False
-            self.weight_quantizer.learning = True
-
     def wgt_quant_svd(self, U, S, VT):
-        U_hat = self.weight_quantizer(U)
-        S_hat = self.weight_quantizer(S)
-        VT_hat = self.weight_quantizer(VT)
+        U_hat = self.weight_quantizer_u(U)
+        S_hat = self.weight_quantizer_s(S)
+        VT_hat = self.weight_quantizer_v(VT)
         return U_hat, S_hat, VT_hat
     
     def act_quant_svd(self, U, S, VT):
-        U_hat = self.act_quantizer(U)
-        S_hat = self.act_quantizer(S)
-        VT_hat = self.act_quantizer(VT)
+        U_hat = self.act_quantizer_u(U)
+        S_hat = self.act_quantizer_s(S)
+        VT_hat = self.act_quantizer_v(VT)
         return U_hat, S_hat, VT_hat
 
     def forward(self, x):
         self.step += 1
-        self.set_quant_config()
 
         # 1.svd分解
         Ux, Sx, VTx = torch.linalg.svd(x, full_matrices=False)

@@ -165,7 +165,7 @@ def train(config, model, dataloaders, criterion, optimizer, scheduler, writer, s
         print('qat!')
     else:
         train_single_epoch = train_single_epoch_ptq
-        num_epochs = 10
+        num_epochs = 3
         print('ptq! change num_epochs to ', num_epochs)
 
     for epoch in range(start_epoch, num_epochs):
