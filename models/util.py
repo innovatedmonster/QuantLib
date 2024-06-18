@@ -22,6 +22,9 @@ from models.quantization.msq.msq import MSQLinearV2
 from models.quantization.msq.rpcaq import RPCAQConv2d
 from models.quantization.msq.rpcaq import RPCAQLinear
 
+from models.quantization.msq.adcpq import ADCPQConv2d
+from models.quantization.msq.adcpq import ADCPQLinear
+
 def get_func(func_name):
     func = globals().get(func_name)
     return func

@@ -117,10 +117,17 @@ class RPCAQConv2d(nn.Conv2d):
         self.step = 0
         self.observer_step = observer_step
     
-    def dcp2m(self, x):
+    def dcp2m(self, x, gpu=False):
         #rpca分解
-        X_L, X_S = util.rpca(x)
-        W_L, W_S = util.rpca(self.weight)
+        if not gpu:
+            X_L, X_S = util.rpca_4d(x)
+            W_L, W_S = util.rpca_4d(self.weight)
+        else:
+            rpca_4d_model = util.RPCA_4D_GPU(lambda_=None, mu=None, tol=1e-7, k=10)
+            rpca_4d_model = rpca_4d_model.cuda()
+            rpca_4d_model = torch.nn.DataParallel(rpca_4d_model)
+            X_L, X_S = rpca_4d_model(x.cuda())
+            W_L, W_S = rpca_4d_model(self.weight.cuda())
 
         if self.quant and self.quant_act:
             X_L_hat = self.act_quantizer_l(X_L)
@@ -139,10 +146,17 @@ class RPCAQConv2d(nn.Conv2d):
 
         return act, wgt
 
-    def dcp3m(self, x):
+    def dcp3m(self, x, gpu=False):
         # print(x.shape)#test
-        X_L, X_S = util.rpca_4d(x)
-        W_L, W_S = util.rpca_4d(self.weight)
+        if not gpu:
+            X_L, X_S = util.rpca_4d(x)
+            W_L, W_S = util.rpca_4d(self.weight)
+        else:
+            rpca_4d_model = util.RPCA_4D_GPU(lambda_=None, mu=None, tol=1e-7, k=10)
+            rpca_4d_model = rpca_4d_model.cuda()
+            rpca_4d_model = torch.nn.DataParallel(rpca_4d_model)
+            X_L, X_S = rpca_4d_model(x.cuda())
+            W_L, W_S = rpca_4d_model(self.weight.cuda())
 
         if self.quant and self.quant_act:
             X_L_hat = self.act_quantizer_l(X_L)
@@ -168,7 +182,7 @@ class RPCAQConv2d(nn.Conv2d):
     def forward(self, x):
         self.step += 1
 
-        act, wgt = self.dcp3m(x)
+        act, wgt = self.dcp3m(x, gpu=False)
 
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
         return output
@@ -195,10 +209,17 @@ class RPCAQLinear(nn.Linear):
         self.step = 0
         self.observer_step = observer_step
     
-    def dcp2m(self, x):
+    def dcp2m(self, x, gpu=False):
         #rpca分解
-        X_L, X_S = util.rpca(x)
-        W_L, W_S = util.rpca(self.weight)
+        if not gpu:
+            X_L, X_S = util.rpca_4d(x)
+            W_L, W_S = util.rpca_4d(self.weight)
+        else:
+            rpca_4d_model = util.RPCA_4D_GPU(lambda_=None, mu=None, tol=1e-7, k=10)
+            rpca_4d_model = rpca_4d_model.cuda()
+            rpca_4d_model = torch.nn.DataParallel(rpca_4d_model)
+            X_L, X_S = rpca_4d_model(x.cuda())
+            W_L, W_S = rpca_4d_model(self.weight.cuda())
 
         if self.quant and self.quant_act:
             X_L_hat = self.act_quantizer_l(X_L)
@@ -217,10 +238,17 @@ class RPCAQLinear(nn.Linear):
 
         return act, wgt
 
-    def dcp3m(self, x):
+    def dcp3m(self, x, gpu=False):
         # print(x.shape)#test
-        X_L, X_S = util.rpca_4d(x)
-        W_L, W_S = util.rpca_4d(self.weight)
+        if not gpu:
+            X_L, X_S = util.rpca_4d(x)
+            W_L, W_S = util.rpca_4d(self.weight)
+        else:
+            rpca_4d_model = util.RPCA_4D_GPU(lambda_=None, mu=None, tol=1e-7, k=10)
+            rpca_4d_model = rpca_4d_model.cuda()
+            rpca_4d_model = torch.nn.DataParallel(rpca_4d_model)
+            X_L, X_S = rpca_4d_model(x.cuda())
+            W_L, W_S = rpca_4d_model(self.weight.cuda())
 
         if self.quant and self.quant_act:
             X_L_hat = self.act_quantizer_l(X_L)
@@ -246,7 +274,7 @@ class RPCAQLinear(nn.Linear):
     def forward(self, x):
         self.step += 1
         
-        act, wgt = self.dcp3m(x)
+        act, wgt = self.dcp3m(x, gpu=False)
 
         output = F.linear(act, wgt, self.bias)
         return output

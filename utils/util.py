@@ -11,6 +11,7 @@ import random
 
 from torchvision.transforms import *
 import torch
+import torch.nn as nn
 import matplotlib.pyplot as plt
 import models.quantization.lsq.lsq as lsq
 import torch.nn.functional as F
@@ -186,7 +187,19 @@ def scaleSVD(U, S, VT):
     VT = torch.mm(scaleMatrix, VT)
     return U, S, VT
 
-# added, rpca decomposition
+# added, simple addition decomposition
+def adcp(X, bit=8):
+    X_L = X.clone()
+    X_L_hat = pTensor_quant(X_L, bit=bit)
+    X_S = X - X_L_hat
+    X_S_hat = pTensor_quant(X_S, bit=bit)
+    X_N = X - X_L_hat - X_S_hat
+    if not torch.all(X_N == 0).item():
+        X_N_hat = pTensor_quant(X_N, bit=bit)
+
+    return X_L_hat, X_S_hat, X_N_hat
+
+# added, rpca decomposition, but too slow
 def shrinkage(X, tau):
     return torch.sign(X) * F.relu(torch.abs(X) - tau)
 
@@ -201,7 +214,13 @@ def randomized_svd(X, k):
     Z = X @ P
     Q, _ = torch.qr(Z)
     Y = Q.T @ X
-    U_hat, S, V = torch.svd(Y, some=False)
+    try:
+        U_hat, S, V = torch.svd(Y, some=False)
+    except torch._C._LinAlgError:
+        noise = 1e-10 * torch.randn_like(Y)
+        Y += noise
+        U_hat, S, V = torch.svd(Y, some=False)
+
     U = Q @ U_hat
     return U[:, :k], S[:k], V[:, :k]
 
@@ -242,6 +261,7 @@ def rpca_2d(D, lambda_=None, mu=None, max_iter=1000, tol=1e-7, k=10):
         # Check for convergence
         error = torch.norm(D - L - S, p='fro') / torch.norm(D, p='fro')
         if error < tol:
+            print('break time is: ', i)#test
             break
             
     return L, S
@@ -257,3 +277,26 @@ def rpca_4d(X, lambda_=None, mu=None, max_iter=1000, tol=1e-7, k=10):
             L[b, c, :, :], S[b, c, :, :] = rpca_2d(D, lambda_, mu, max_iter, tol, k)
     
     return L, S
+
+class RPCA_4D_GPU(nn.Module):
+    def __init__(self, lambda_=None, mu=None, max_iter=1000, tol=1e-7, k=10):
+        super(RPCA_4D_GPU, self).__init__()
+        self.lambda_ = lambda_
+        self.mu = mu
+        self.max_iter = max_iter
+        self.tol = tol
+        self.k = k
+
+    def forward(self, X):
+        batch_size, channels, height, width = X.shape
+        # print('X.shape is ', X.shape)
+        L = torch.zeros_like(X, device=X.device)
+        S = torch.zeros_like(X, device=X.device)
+        
+        for b in range(batch_size):
+            # print('循环b:', b)
+            for c in range(channels):
+                D = X[b, c, :, :]
+                L[b, c, :, :], S[b, c, :, :] = rpca_2d(D, self.lambda_, self.mu, self.max_iter, self.tol, self.k)
+        
+        return L, S
