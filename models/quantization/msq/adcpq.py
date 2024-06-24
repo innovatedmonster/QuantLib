@@ -114,10 +114,13 @@ class ADCPQConv2d(nn.Conv2d):
                                                    quant=quant, observer=observer, learning=learning)
         self.weight_quantizer_n = ADCPQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_l = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_s = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_n = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
         self.step = 0
         self.observer_step = observer_step
 
-    def act_dcp3m(self, x):
+    def act_dcp3m(self, x, run2m=False):
         # print(x.shape)#test
         X_L = x.clone()
         X_L_hat = self.act_quantizer_l(X_L)
@@ -126,10 +129,12 @@ class ADCPQConv2d(nn.Conv2d):
         X_N = x - X_L_hat - X_S_hat
         if not torch.all(X_N == 0).item():
             X_N_hat = self.act_quantizer_n(X_N)
+        if run2m:
+            X_N_hat = torch.zeros_like(x)
 
         return X_L_hat, X_S_hat, X_N_hat
     
-    def wgt_dcp3m(self):
+    def wgt_dcp3m(self, run2m=False):
         # print(x.shape)#test
         X_L = self.weight.clone()
         X_L_hat = self.weight_quantizer_l(X_L)
@@ -138,14 +143,16 @@ class ADCPQConv2d(nn.Conv2d):
         X_N = self.weight - X_L_hat - X_S_hat
         if not torch.all(X_N == 0).item():
             X_N_hat = self.weight_quantizer_n(X_N)
+        if run2m:
+            X_N_hat = torch.zeros_like(self.weight)
 
         return X_L_hat, X_S_hat, X_N_hat
 
     def forward(self, x):
         self.step += 1
 
-        X_L_hat, X_S_hat, X_N_hat = self.act_dcp3m(x)
-        W_L_hat, W_S_hat, W_N_hat = self.wgt_dcp3m()
+        X_L_hat, X_S_hat, X_N_hat = self.act_dcp3m(x, run2m=True)
+        W_L_hat, W_S_hat, W_N_hat = self.wgt_dcp3m(run2m=True)
         act = X_L_hat + X_S_hat + X_N_hat
         wgt = W_L_hat + W_S_hat + W_N_hat
 
@@ -171,10 +178,13 @@ class ADCPQLinear(nn.Linear):
                                                    quant=quant, observer=observer, learning=learning)
         self.weight_quantizer_n = ADCPQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_l = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_s = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer_n = ADCPQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
         self.step = 0
         self.observer_step = observer_step
 
-    def act_dcp3m(self, x):
+    def act_dcp3m(self, x, run2m=False):
         # print(x.shape)#test
         X_L = x.clone()
         X_L_hat = self.act_quantizer_l(X_L)
@@ -183,10 +193,12 @@ class ADCPQLinear(nn.Linear):
         X_N = x - X_L_hat - X_S_hat
         if not torch.all(X_N == 0).item():
             X_N_hat = self.act_quantizer_n(X_N)
+        if run2m:
+            X_N_hat = torch.zeros_like(x)
 
         return X_L_hat, X_S_hat, X_N_hat
     
-    def wgt_dcp3m(self):
+    def wgt_dcp3m(self, run2m=False):
         # print(x.shape)#test
         X_L = self.weight.clone()
         X_L_hat = self.weight_quantizer_l(X_L)
@@ -195,14 +207,16 @@ class ADCPQLinear(nn.Linear):
         X_N = self.weight - X_L_hat - X_S_hat
         if not torch.all(X_N == 0).item():
             X_N_hat = self.weight_quantizer_n(X_N)
+        if run2m:
+            X_N_hat = torch.zeros_like(self.weight)
 
         return X_L_hat, X_S_hat, X_N_hat
 
     def forward(self, x):
         self.step += 1
         
-        X_L_hat, X_S_hat, X_N_hat = self.act_dcp3m(x)
-        W_L_hat, W_S_hat, W_N_hat = self.wgt_dcp3m()
+        X_L_hat, X_S_hat, X_N_hat = self.act_dcp3m(x, run2m=True)
+        W_L_hat, W_S_hat, W_N_hat = self.wgt_dcp3m(run2m=True)
         act = X_L_hat + X_S_hat + X_N_hat
         wgt = W_L_hat + W_S_hat + W_N_hat
 

@@ -15,10 +15,10 @@ model:
     dir: './models/cifar10_fp.pth'
   qat: False
   quant_all: True
-  conv_quant_func: "ADCPQConv2d"
-  fc_quant_func: "ADCPQLinear"
+  conv_quant_func: "MSQConv2dV2"
+  fc_quant_func: "MSQLinearV2"
   quant_params:
-    bits: 2
+    bits: 8
     quant_wgt: True
     wgt_qtype: "qint"
     wgt_per_channel: False

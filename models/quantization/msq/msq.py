@@ -214,10 +214,10 @@ class MSQLinearV1(nn.Linear):
         output = F.linear(act, wgt, self.bias)
         return output
 
-#不完整，缺少img2col一步！
+#不需要img2col一步！因为W和X之间无法进行scale缩放迁移
 #svd分解，scale不可导，wgt无zero_point而act有。wgt可导可不导
 # 当wgt不可导，是msq_vPtq；当wgt可导，是msq_vQat
-class MSQConv2dV2(nn.Linear):
+class MSQConv2dV2(nn.Conv2d):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, padding=0, dilation=1, groups=1, bias=True,
                  bits=8, quant_wgt=True, wgt_qtype="qint", wgt_per_channel=False, quant_act=True, act_qtype="quint",
                  quant=True, observer=False, learning=False, observer_step=1):
@@ -234,6 +234,12 @@ class MSQConv2dV2(nn.Linear):
                                                    quant=quant, observer=observer, learning=learning)
         self.weight_quantizer_v = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
+        
+        #test_ori_loss
+        self.act_quantizer = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        self.weight_quantizer = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+                                                   quant=quant, observer=observer, learning=learning)
+
         self.step = 0
         self.observer_step = observer_step
 
@@ -255,30 +261,35 @@ class MSQConv2dV2(nn.Linear):
         # 1.svd分解
         Ux, Sx, VTx = torch.linalg.svd(x, full_matrices=False)
         Uw, Sw, VTw = torch.linalg.svd(self.weight, full_matrices=False)
-        Sx = torch.diag(Sx)
-        Sw = torch.diag(Sw)
+        # print('type is ', type(x), type(Sx))#test self.weight & Sx
+        # print('Sx shape is', Sx.shape)
+        # print('Sw shape is', Sw.shape)
+
+        Sx = torch.diag_embed(Sx)
+        Sw = torch.diag_embed(Sw)
+
         # 2.缩放
         Ux, Sx, VTx = util.scaleSVD(Ux, Sx, VTx)
         Uw, Sw, VTw = util.scaleSVD(Uw, Sw, VTw)
         # 3.分别量化并合成
         if self.quant and self.quant_act:
-            # act2 = self.act_quantizer(x)
+            act2 = self.act_quantizer(x)
             Ux_hat, Sx_hat, VTx_hat = self.act_quant_svd(Ux, Sx, VTx)
-            act = torch.mm(Ux_hat, torch.mm(Sx_hat, VTx_hat))
+            act = torch.matmul(Ux_hat, torch.matmul(Sx_hat, VTx_hat))
         else:
             act = x
         if self.quant and self.quant_wgt:
-            # wgt2 = self.weight_quantizer(self.weight)
+            wgt2 = self.weight_quantizer(self.weight)
             Uw_hat, Sw_hat, VTw_hat = self.wgt_quant_svd(Uw, Sw, VTw)
             # Uw_hat, Sw_hat, VTw_hat = self.act_quant_svd(Uw, Sw, VTw)#fixed, unknown
-            wgt = torch.mm(Uw_hat, torch.mm(Sw_hat, VTw_hat))
+            wgt = torch.matmul(Uw_hat, torch.matmul(Sw_hat, VTw_hat))
         else:
             wgt = self.weight
 
         output = F.conv2d(act, wgt, self.bias, self.stride, self.padding, self.dilation, self.groups)
-        # output2 = F.linear(act2, wgt2, self.bias)
-        # output_ori = F.linear(x, self.weight, self.bias)
-        # 4.打印量化误差
+        # output2 = F.conv2d(act2, wgt2, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # output_ori = F.conv2d(x, self.weight, self.bias, self.stride, self.padding, self.dilation, self.groups)
+        # # 4.打印量化误差
         # loss_X_svd = util.cal_quant_loss(x, act)
         # print("loss_X_svd: ", loss_X_svd)
         # loss_W_svd = util.cal_quant_loss(self.weight, wgt)
@@ -315,6 +326,12 @@ class MSQLinearV2(nn.Linear):
                                                    quant=quant, observer=observer, learning=learning)
         self.weight_quantizer_v = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
                                                    quant=quant, observer=observer, learning=learning)
+        
+        # #test_ori_loss
+        # self.act_quantizer = MSQActQuantizer(bits, qtype=act_qtype, quant=quant, observer=observer, learning=learning)
+        # self.weight_quantizer = MSQWeightQuantizer(bits, qtype=wgt_qtype, per_channel=wgt_per_channel,
+        #                                            quant=quant, observer=observer, learning=learning)
+
         self.step = 0
         self.observer_step = observer_step
 
@@ -336,6 +353,8 @@ class MSQLinearV2(nn.Linear):
         # 1.svd分解
         Ux, Sx, VTx = torch.linalg.svd(x, full_matrices=False)
         Uw, Sw, VTw = torch.linalg.svd(self.weight, full_matrices=False)
+        # print('type is ', type(x), type(Sx))#test self.weight & Sx
+        # print('Ux shape is', x.shape)
         Sx = torch.diag(Sx)
         Sw = torch.diag(Sw)
         # 2.缩放
@@ -359,7 +378,7 @@ class MSQLinearV2(nn.Linear):
         output = F.linear(act, wgt, self.bias)
         # output2 = F.linear(act2, wgt2, self.bias)
         # output_ori = F.linear(x, self.weight, self.bias)
-        # 4.打印量化误差
+        # # 4.打印量化误差
         # loss_X_svd = util.cal_quant_loss(x, act)
         # print("loss_X_svd: ", loss_X_svd)
         # loss_W_svd = util.cal_quant_loss(self.weight, wgt)

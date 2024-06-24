@@ -177,15 +177,48 @@ def cal_quant_loss(X, X_hat):
 def scaleSVD(U, S, VT):
     scaleMatrix = torch.sqrt(torch.sqrt(S))
     scaleMatrix_1 = scaleMatrix.clone()
-    for i in range(scaleMatrix_1.size(0)):
-        scaleMatrix_1[i, i] = 1 / scaleMatrix_1[i][i]
+
+    # dimension_S = len(S.shape)
+    # assert (dimension_S == 4 or dimension_S == 2), "dimension of S is not 2 or 4!"
+    # if dimension_S == 4:
+        # for n in range(scaleMatrix_1.size(0)):#太慢了
+        #     for c in range(scaleMatrix_1.size(1)):
+        #         for i in range(scaleMatrix_1.size(2)):
+        #             if scaleMatrix_1[n][c][i][i] != 0.0:
+        #                 scaleMatrix_1[n, c, i, i] = 1 / scaleMatrix_1[n][c][i][i]
+        # for i in range(scaleMatrix_1.size(2)): #没排除零元素
+        #     scaleMatrix_1[:, :, i, i] = 1 / scaleMatrix_1[:, :, i, i]
+    # elif dimension_S == 2:
+    #     for i in range(scaleMatrix_1.size(0)):
+    #         scaleMatrix_1[i, i] = 1 / scaleMatrix_1[i][i]
+    scaleMatrix_1 = torch.where(scaleMatrix_1 != 0, 1.0 / scaleMatrix_1, torch.tensor(0.0).to(scaleMatrix_1.device))
+
     # print(scaleMatrix)
     # print(scaleMatrix_1)
-    
-    U = torch.mm(U, scaleMatrix)
-    S = torch.mm(scaleMatrix_1, torch.mm(S, scaleMatrix_1))
-    VT = torch.mm(scaleMatrix, VT)
+    U = torch.matmul(U, scaleMatrix)
+    S = torch.matmul(scaleMatrix_1, torch.matmul(S, scaleMatrix_1))
+    VT = torch.matmul(scaleMatrix, VT)
     return U, S, VT
+
+#太慢了，不如torch.diag_embed
+# def diagS(x):
+#     dimension_x = len(x.shape)
+#     assert (dimension_x <= 3 and dimension_x >= 1), "dimension of x is not in [1, 3]"
+#     if dimension_x == 3:
+#         n, c, h = x.shape
+#         diag_nd = torch.zeros((n, c, h, h))
+#         for i in range(n):
+#             for j in range(c):
+#                 diag_nd[i][j] = torch.diag(x[i][j])
+#     elif dimension_x == 2:
+#         n, c = x.shape
+#         diag_nd = torch.zeros((n, c, c))
+#         for i in range(n):
+#             diag_nd[i] = torch.diag(x[i])
+#     else:
+#         diag_nd = torch.diag(x)
+    
+#     return diag_nd.cuda()
 
 # added, simple addition decomposition
 def adcp(X, bit=8):
